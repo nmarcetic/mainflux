@@ -15,6 +15,7 @@ Using [modl](https://github.com/jmoiron/modl)? Check out [modl-migrate](https://
 * Atomic migrations
 * Up/down migrations to allow rollback
 * Supports multiple database types in one project
+* Works great with other libraries such as [sqlx](http://jmoiron.github.io/sqlx/)
 
 ## Installation
 
@@ -55,6 +56,19 @@ production:
     table: migrations
 ```
 
+(See more examples for different set ups [here](test-integration/dbconfig.yml))
+
+Also one can obtain env variables in datasource field via `os.ExpandEnv` embedded call for the field.
+This may be useful if one doesn't want to store credentials in file:
+
+```yml
+production:
+    dialect: postgres
+    datasource: host=prodhost dbname=proddb user=${DB_USER} password=${DB_PASSWORD} sslmode=required
+    dir: migrations
+    table: migrations
+```
+
 The `table` setting is optional and will default to `gorp_migrations`.
 
 The environment that will be used can be specified with the `-env` flag (defaults to `development`).
@@ -69,10 +83,10 @@ Usage: sql-migrate up [options] ...
 
 Options:
 
-  -config=config.yml   Configuration file to use.
-  -env="development"   Environment.
-  -limit=0             Limit the number of migrations (0 = unlimited).
-  -dryrun              Don't apply migrations, just print them.
+  -config=dbconfig.yml   Configuration file to use.
+  -env="development"     Environment.
+  -limit=0               Limit the number of migrations (0 = unlimited).
+  -dryrun                Don't apply migrations, just print them.
 ```
 
 The `new` command creates a new empty migration template using the following pattern `<current time>-<name>.sql`.
@@ -91,6 +105,15 @@ $ sql-migrate status
 | 1_initial.sql | 2014-09-13 08:19:06.788354925 +0000 UTC |
 | 2_record.sql  | no                                      |
 +---------------+-----------------------------------------+
+```
+
+#### Running Test Integrations
+You can see how to run setups for different setups by executing the `.sh` files in [test-integration](test-integration/)
+
+```bash
+# Run mysql-env.sh example (you need to be in the project root directory)
+
+./test-integration/mysql-env.sh
 ```
 
 ### MySQL Caveat
@@ -115,7 +138,7 @@ Import sql-migrate into your application:
 import "github.com/rubenv/sql-migrate"
 ```
 
-Set up a source of migrations, this can be from memory, from a set of files or from bindata (more on that later):
+Set up a source of migrations, this can be from memory, from a set of files, from bindata (more on that later), or from any library that implements [`http.FileSystem`](https://godoc.org/net/http#FileSystem):
 
 ```go
 // Hardcoded strings in memory:
@@ -136,7 +159,7 @@ migrations := &migrate.FileMigrationSource{
 
 // OR: Use migrations from a packr box
 migrations := &migrate.PackrMigrationSource{
-    Box: packr.NewBox("./migrations"),
+    Box: packr.New("migrations", "./migrations"),
 }
 
 // OR: Use migrations from bindata:
@@ -144,6 +167,11 @@ migrations := &migrate.AssetMigrationSource{
     Asset:    Asset,
     AssetDir: AssetDir,
     Dir:      "migrations",
+}
+
+// OR: Read migrations from a `http.FileSystem`
+migrationSource := &migrate.HttpFileSystemMigrationSource{
+    FileSystem: httpFS,
 }
 ```
 
@@ -227,11 +255,17 @@ If you like your Go applications self-contained (that is: a single binary): use 
 
 Just write your migration files as usual, as a set of SQL files in a folder.
 
+Import the packr package into your application:
+
+```go
+import "github.com/gobuffalo/packr/v2"
+```
+
 Use the `PackrMigrationSource` in your application to find the migrations:
 
 ```go
 migrations := &migrate.PackrMigrationSource{
-    Box: packr.NewBox("./migrations"),
+    Box: packr.New("migrations", "./migrations"),
 }
 ```
 
@@ -272,6 +306,16 @@ Both `Asset` and `AssetDir` are functions provided by bindata.
 
 Then proceed as usual.
 
+## Embedding migrations with libraries that implement `http.FileSystem`
+
+You can also embed migrations with any library that implements `http.FileSystem`, like [`vfsgen`](https://github.com/shurcooL/vfsgen), [`parcello`](https://github.com/phogolabs/parcello), or [`go-resources`](https://github.com/omeid/go-resources).
+
+```go
+migrationSource := &migrate.HttpFileSystemMigrationSource{
+    FileSystem: httpFS,
+}
+```
+
 ## Extending
 
 Adding a new migration source means implementing `MigrationSource`.
@@ -283,6 +327,18 @@ type MigrationSource interface {
 ```
 
 The resulting slice of migrations will be executed in the given order, so it should usually be sorted by the `Id` field.
+
+## Usage with [sqlx](http://jmoiron.github.io/sqlx/)
+
+This library is compatible with sqlx. When calling migrate just dereference the DB from your `*sqlx.DB`:
+
+```
+n, err := migrate.Exec(db.DB, "sqlite3", migrations, migrate.Up)
+                    //   ^^^ <-- Here db is a *sqlx.DB, the db.DB field is the plain sql.DB
+if err != nil {
+    // Handle errors!
+}
+```
 
 ## License
 

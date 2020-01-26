@@ -28,7 +28,7 @@ import (
 	twmongodb "github.com/mainflux/mainflux/twins/mongodb"
 	twnats "github.com/mainflux/mainflux/twins/nats"
 	"github.com/mainflux/mainflux/twins/uuid"
-	nats "github.com/nats-io/go-nats"
+	nats "github.com/nats-io/nats.go"
 	opentracing "github.com/opentracing/opentracing-go"
 	stdprometheus "github.com/prometheus/client_golang/prometheus"
 	jconfig "github.com/uber/jaeger-client-go/config"

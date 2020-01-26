@@ -13,7 +13,7 @@ import (
 	"github.com/mainflux/mainflux"
 	"github.com/mainflux/mainflux/twins/mqtt"
 	"github.com/mainflux/senml"
-	"github.com/nats-io/go-nats"
+	"github.com/nats-io/nats.go"
 )
 
 var (
