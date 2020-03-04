@@ -12,13 +12,12 @@ services:
       - mqtt-adapter
 
   vernemq:
-    image: vernemq/vernemq:1.10.1-alpine
+    image: mainflux/vernemq:1.10.1-alpine
     container_name: mainflux-vernemq
     restart: on-failure
     environment:
       DOCKER_VERNEMQ_ALLOW_ANONYMOUS: "on"
       DOCKER_VERNEMQ_LOG__CONSOLE__LEVEL: info
-      DOCKER_VERNEMQ_ACCEPT_EULA: "yes"
     ports:
       - 18831:${MF_MQTT_BROKER_PORT}
       - 8881:${MF_MQTT_BROKER_WS_PORT}
@@ -40,7 +39,7 @@ services:
       MF_MQTT_ADAPTER_LOG_LEVEL: ${MF_MQTT_ADAPTER_LOG_LEVEL}
       MF_MQTT_ADAPTER_PORT: ${MF_MQTT_ADAPTER_PORT}
       MF_MQTT_ADAPTER_WS_PORT: ${MF_MQTT_ADAPTER_WS_PORT}
-      MF_MQTT_ADAPTER_ES_HOST: es-redis
+      MF_MQTT_ADAPTER_ES_URL: es-redis:${MF_REDIS_TCP_PORT}
       MF_NATS_URL: ${MF_NATS_URL}
       MF_THINGS_URL: things:${MF_THINGS_AUTH_GRPC_PORT}
       MF_JAEGER_URL: ${MF_JAEGER_URL}
