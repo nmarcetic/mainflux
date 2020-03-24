@@ -60,7 +60,7 @@ func (e *Event) AuthConnect(c *session.Client) error {
 	if c == nil {
 		return errInvalidConnect
 	}
-	e.logger.Info(fmt.Sprintf("AuthConenct - client ID: %s, username: %s", c.ID, c.Username))
+	e.logger.Info(fmt.Sprintf("AuthConnect - client ID: %s, username: %s", c.ID, c.Username))
 
 	t := &mainflux.Token{
 		Value: string(c.Password),

@@ -63,7 +63,6 @@ const (
 	defNatsURL = broker.DefaultURL
 	envNatsURL = "MF_NATS_URL"
 	// Jaeger
-
 	defJaegerURL = ""
 	envJaegerURL = "MF_JAEGER_URL"
 	// TLS
@@ -145,10 +144,10 @@ func main() {
 
 	errs := make(chan error, 2)
 
-	logger.Info(fmt.Sprintf("Starting MQTT proxy on port %s ", cfg.mqttPort))
+	logger.Info(fmt.Sprintf("Starting MQTT proxy on port %s", cfg.mqttPort))
 	go proxyMQTT(cfg, logger, evt, errs)
 
-	logger.Info(fmt.Sprintf("Starting MQTT over WS  proxy on port %s ", cfg.httpPort))
+	logger.Info(fmt.Sprintf("Starting MQTT over WS  proxy on port %s", cfg.httpPort))
 	go proxyWS(cfg, logger, evt, errs)
 
 	go func() {
