@@ -8,10 +8,18 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mainflux/mainflux/errors"
+	"golang.org/x/net/idna"
 )
 
-const minPassLen = 8
+const (
+	minPassLen   = 8
+	maxLocalLen  = 64
+	maxDomainLen = 255
+	maxTLDLen    = 24 // longest TLD currently in existence
+
+	atSeparator  = "@"
+	dotSeparator = "."
+)
 
 var (
 	userRegexp    = regexp.MustCompile("^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+$")
@@ -28,7 +36,7 @@ type User struct {
 }
 
 // Validate returns an error if user representation is invalid.
-func (u User) Validate() errors.Error {
+func (u User) Validate() error {
 	if !isEmail(u.Email) {
 		return ErrMalformedEntity
 	}
@@ -44,36 +52,56 @@ func (u User) Validate() errors.Error {
 type UserRepository interface {
 	// Save persists the user account. A non-nil error is returned to indicate
 	// operation failure.
-	Save(context.Context, User) errors.Error
+	Save(context.Context, User) error
 
 	// Update updates the user metadata.
-	UpdateUser(context.Context, User) errors.Error
+	UpdateUser(context.Context, User) error
 
 	// RetrieveByID retrieves user by its unique identifier (i.e. email).
-	RetrieveByID(context.Context, string) (User, errors.Error)
+	RetrieveByID(context.Context, string) (User, error)
 
 	// UpdatePassword updates password for user with given email
-	UpdatePassword(_ context.Context, email, password string) errors.Error
+	UpdatePassword(_ context.Context, email, password string) error
 }
 
 func isEmail(email string) bool {
-	if len(email) < 6 || len(email) > 254 {
+	if email == "" {
 		return false
 	}
 
-	at := strings.LastIndex(email, "@")
-	if at <= 0 || at > len(email)-3 {
+	es := strings.Split(email, atSeparator)
+	if len(es) != 2 {
+		return false
+	}
+	local, host := es[0], es[1]
+
+	if local == "" || len(local) > maxLocalLen {
 		return false
 	}
 
-	user := email[:at]
-	host := email[at+1:]
+	hs := strings.Split(host, dotSeparator)
+	if len(hs) != 2 {
+		return false
+	}
+	domain, ext := hs[0], hs[1]
 
-	if len(user) > 64 {
+	if domain == "" || len(domain) > maxDomainLen {
+		return false
+	}
+	if ext == "" || len(ext) > maxTLDLen {
 		return false
 	}
 
-	if userDotRegexp.MatchString(user) || !userRegexp.MatchString(user) || !hostRegexp.MatchString(host) {
+	punyLocal, err := idna.ToASCII(local)
+	if err != nil {
+		return false
+	}
+	punyHost, err := idna.ToASCII(host)
+	if err != nil {
+		return false
+	}
+
+	if userDotRegexp.MatchString(punyLocal) || !userRegexp.MatchString(punyLocal) || !hostRegexp.MatchString(punyHost) {
 		return false
 	}
 
