@@ -14,12 +14,12 @@ import (
 
 	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 	"github.com/mainflux/mainflux"
+	"github.com/mainflux/mainflux/broker"
 	"github.com/mainflux/mainflux/logger"
 	"github.com/mainflux/mainflux/transformers/senml"
 	"github.com/mainflux/mainflux/writers"
 	"github.com/mainflux/mainflux/writers/api"
 	"github.com/mainflux/mainflux/writers/mongodb"
-	nats "github.com/nats-io/nats.go"
 	stdprometheus "github.com/prometheus/client_golang/prometheus"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -28,10 +28,10 @@ import (
 const (
 	svcName = "mongodb-writer"
 
-	defNatsURL         = nats.DefaultURL
 	defLogLevel        = "error"
+	defNatsURL         = "nats://localhost:4222"
 	defPort            = "8180"
-	defDBName          = "mainflux"
+	defDB              = "messages"
 	defDBHost          = "localhost"
 	defDBPort          = "27017"
 	defSubjectsCfgPath = "/config/subjects.toml"
@@ -39,7 +39,7 @@ const (
 	envNatsURL         = "MF_NATS_URL"
 	envLogLevel        = "MF_MONGO_WRITER_LOG_LEVEL"
 	envPort            = "MF_MONGO_WRITER_PORT"
-	envDBName          = "MF_MONGO_WRITER_DB_NAME"
+	envDB              = "MF_MONGO_WRITER_DB"
 	envDBHost          = "MF_MONGO_WRITER_DB_HOST"
 	envDBPort          = "MF_MONGO_WRITER_DB_PORT"
 	envSubjectsCfgPath = "MF_MONGO_WRITER_SUBJECTS_CONFIG"
@@ -63,12 +63,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	nc, err := nats.Connect(cfg.natsURL)
+	b, err := broker.New(cfg.natsURL)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to connect to NATS: %s", err))
+		logger.Error(err.Error())
 		os.Exit(1)
 	}
-	defer nc.Close()
+	defer b.Close()
 
 	addr := fmt.Sprintf("mongodb://%s:%s", cfg.dbHost, cfg.dbPort)
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(addr))
@@ -84,7 +84,7 @@ func main() {
 	repo = api.LoggingMiddleware(repo, logger)
 	repo = api.MetricsMiddleware(repo, counter, latency)
 	st := senml.New()
-	if err := writers.Start(nc, repo, st, svcName, cfg.subjectsCfgPath, logger); err != nil {
+	if err := writers.Start(b, repo, st, svcName, cfg.subjectsCfgPath, logger); err != nil {
 		logger.Error(fmt.Sprintf("Failed to start MongoDB writer: %s", err))
 		os.Exit(1)
 	}
@@ -107,7 +107,7 @@ func loadConfigs() config {
 		natsURL:         mainflux.Env(envNatsURL, defNatsURL),
 		logLevel:        mainflux.Env(envLogLevel, defLogLevel),
 		port:            mainflux.Env(envPort, defPort),
-		dbName:          mainflux.Env(envDBName, defDBName),
+		dbName:          mainflux.Env(envDB, defDB),
 		dbHost:          mainflux.Env(envDBHost, defDBHost),
 		dbPort:          mainflux.Env(envDBPort, defDBPort),
 		subjectsCfgPath: mainflux.Env(envSubjectsCfgPath, defSubjectsCfgPath),

@@ -14,22 +14,22 @@ import (
 	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 	influxdata "github.com/influxdata/influxdb/client/v2"
 	"github.com/mainflux/mainflux"
+	"github.com/mainflux/mainflux/broker"
 	"github.com/mainflux/mainflux/logger"
 	"github.com/mainflux/mainflux/transformers/senml"
 	"github.com/mainflux/mainflux/writers"
 	"github.com/mainflux/mainflux/writers/api"
 	"github.com/mainflux/mainflux/writers/influxdb"
-	nats "github.com/nats-io/nats.go"
 	stdprometheus "github.com/prometheus/client_golang/prometheus"
 )
 
 const (
 	svcName = "influxdb-writer"
 
-	defNatsURL         = nats.DefaultURL
+	defNatsURL         = "nats://localhost:4222"
 	defLogLevel        = "error"
 	defPort            = "8180"
-	defDBName          = "mainflux"
+	defDB              = "messages"
 	defDBHost          = "localhost"
 	defDBPort          = "8086"
 	defDBUser          = "mainflux"
@@ -39,7 +39,7 @@ const (
 	envNatsURL         = "MF_NATS_URL"
 	envLogLevel        = "MF_INFLUX_WRITER_LOG_LEVEL"
 	envPort            = "MF_INFLUX_WRITER_PORT"
-	envDBName          = "MF_INFLUX_WRITER_DB_NAME"
+	envDB              = "MF_INFLUX_WRITER_DB"
 	envDBHost          = "MF_INFLUX_WRITER_DB_HOST"
 	envDBPort          = "MF_INFLUX_WRITER_DB_PORT"
 	envDBUser          = "MF_INFLUX_WRITER_DB_USER"
@@ -67,12 +67,12 @@ func main() {
 		log.Fatalf(err.Error())
 	}
 
-	nc, err := nats.Connect(cfg.natsURL)
+	b, err := broker.New(cfg.natsURL)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to connect to NATS: %s", err))
+		logger.Error(err.Error())
 		os.Exit(1)
 	}
-	defer nc.Close()
+	defer b.Close()
 
 	client, err := influxdata.NewHTTPClient(clientCfg)
 	if err != nil {
@@ -87,7 +87,7 @@ func main() {
 	repo = api.LoggingMiddleware(repo, logger)
 	repo = api.MetricsMiddleware(repo, counter, latency)
 	st := senml.New()
-	if err := writers.Start(nc, repo, st, svcName, cfg.subjectsCfgPath, logger); err != nil {
+	if err := writers.Start(b, repo, st, svcName, cfg.subjectsCfgPath, logger); err != nil {
 		logger.Error(fmt.Sprintf("Failed to start InfluxDB writer: %s", err))
 		os.Exit(1)
 	}
@@ -110,7 +110,7 @@ func loadConfigs() (config, influxdata.HTTPConfig) {
 		natsURL:         mainflux.Env(envNatsURL, defNatsURL),
 		logLevel:        mainflux.Env(envLogLevel, defLogLevel),
 		port:            mainflux.Env(envPort, defPort),
-		dbName:          mainflux.Env(envDBName, defDBName),
+		dbName:          mainflux.Env(envDB, defDB),
 		dbHost:          mainflux.Env(envDBHost, defDBHost),
 		dbPort:          mainflux.Env(envDBPort, defDBPort),
 		dbUser:          mainflux.Env(envDBUser, defDBUser),

@@ -9,21 +9,21 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/gogo/protobuf/proto"
-	"github.com/mainflux/mainflux"
+	"github.com/mainflux/mainflux/broker"
 	"github.com/mainflux/mainflux/errors"
 	"github.com/mainflux/mainflux/logger"
 	"github.com/mainflux/mainflux/transformers"
 	"github.com/mainflux/mainflux/transformers/senml"
-	nats "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go"
 )
 
 var (
-	errOpenConfFile = errors.New("Unable to open configuration file")
+	errOpenConfFile  = errors.New("Unable to open configuration file")
 	errParseConfFile = errors.New("Unable to parse configuration file")
 )
 
 type consumer struct {
-	nc          *nats.Conn
+	broker      broker.Nats
 	repo        MessageRepository
 	transformer transformers.Transformer
 	logger      logger.Logger
@@ -32,30 +32,30 @@ type consumer struct {
 // Start method starts consuming messages received from NATS.
 // This method transforms messages to SenML format before
 // using MessageRepository to store them.
-func Start(nc *nats.Conn, repo MessageRepository, transformer transformers.Transformer, queue string, subjectsCfgPath string, logger logger.Logger) error {
+func Start(broker broker.Nats, repo MessageRepository, transformer transformers.Transformer, queue string, subjectsCfgPath string, logger logger.Logger) error {
 	c := consumer{
-		nc:          nc,
+		broker:      broker,
 		repo:        repo,
 		transformer: transformer,
 		logger:      logger,
 	}
 
-	subjects, err := LoadSubjectsConfig(subjectsCfgPath)
+	subjects, err := loadSubjectsConfig(subjectsCfgPath)
 	if err != nil {
 		logger.Warn(fmt.Sprintf("Failed to load subjects: %s", err))
 	}
 
 	for _, subject := range subjects {
-		_, err := nc.QueueSubscribe(subject, queue, c.consume)
+		_, err := broker.QueueSubscribe(subject, queue, c.consume)
 		if err != nil {
 			return err
 		}
 	}
-	return err
+	return nil
 }
 
 func (c *consumer) consume(m *nats.Msg) {
-	var msg mainflux.Message
+	var msg broker.Message
 	if err := proto.Unmarshal(m.Data, &msg); err != nil {
 		c.logger.Warn(fmt.Sprintf("Failed to unmarshal received message: %s", err))
 		return
@@ -86,16 +86,16 @@ type subjectsConfig struct {
 	Subjects filterConfig `toml:"subjects"`
 }
 
-func LoadSubjectsConfig(subjectsConfigPath string) ([]string, error)  {
+func loadSubjectsConfig(subjectsConfigPath string) ([]string, error) {
 	data, err := ioutil.ReadFile(subjectsConfigPath)
 	if err != nil {
-		return []string{mainflux.InputChannels}, errors.Wrap(errOpenConfFile, err)
+		return []string{broker.SubjectAllChannels}, errors.Wrap(errOpenConfFile, err)
 	}
 
 	var subjectsCfg subjectsConfig
 	if err := toml.Unmarshal(data, &subjectsCfg); err != nil {
-		return []string{mainflux.InputChannels}, errors.Wrap(errParseConfFile, err)
+		return []string{broker.SubjectAllChannels}, errors.Wrap(errParseConfFile, err)
 	}
 
-	return subjectsCfg.Subjects.List, err
+	return subjectsCfg.Subjects.List, nil
 }

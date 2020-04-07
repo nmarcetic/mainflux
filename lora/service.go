@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/mainflux/mainflux"
+	"github.com/mainflux/mainflux/broker"
 )
 
 const (
@@ -33,40 +33,40 @@ var (
 // Service specifies an API that must be fullfiled by the domain service
 // implementation, and all of its decorators (e.g. logging & metrics).
 type Service interface {
-	// CreateThing creates thing  mfx:lora & lora:mfx route-map
-	CreateThing(string, string) error
+	// CreateThing creates thingID:devEUI route-map
+	CreateThing(thingID string, devEUI string) error
 
-	// UpdateThing updates thing mfx:lora & lora:mfx route-map
-	UpdateThing(string, string) error
+	// UpdateThing updates thingID:devEUI route-map
+	UpdateThing(thingID string, devEUI string) error
 
-	// RemoveThing removes thing mfx:lora & lora:mfx route-map
-	RemoveThing(string) error
+	// RemoveThing removes thingID:devEUI route-map
+	RemoveThing(thingID string) error
 
-	// CreateChannel creates channel mfx:lora & lora:mfx route-map
-	CreateChannel(string, string) error
+	// CreateChannel creates channelID:appID route-map
+	CreateChannel(chanID string, appID string) error
 
-	// UpdateChannel updates mfx:lora & lora:mfx route-map
-	UpdateChannel(string, string) error
+	// UpdateChannel updates channelID:appID route-map
+	UpdateChannel(chanID string, appID string) error
 
-	// RemoveChannel removes channel mfx:lora & lora:mfx route-map
-	RemoveChannel(string) error
+	// RemoveChannel removes channelID:appID route-map
+	RemoveChannel(chanID string) error
 
 	// Publish forwards messages from the LoRa MQTT broker to Mainflux NATS broker
-	Publish(context.Context, string, Message) error
+	Publish(ctx context.Context, token string, msg Message) error
 }
 
 var _ Service = (*adapterService)(nil)
 
 type adapterService struct {
-	publisher  mainflux.MessagePublisher
+	broker     broker.Nats
 	thingsRM   RouteMapRepository
 	channelsRM RouteMapRepository
 }
 
 // New instantiates the LoRa adapter implementation.
-func New(pub mainflux.MessagePublisher, thingsRM, channelsRM RouteMapRepository) Service {
+func New(broker broker.Nats, thingsRM, channelsRM RouteMapRepository) Service {
 	return &adapterService{
-		publisher:  pub,
+		broker:     broker,
 		thingsRM:   thingsRM,
 		channelsRM: channelsRM,
 	}
@@ -104,7 +104,7 @@ func (as *adapterService) Publish(ctx context.Context, token string, m Message) 
 	}
 
 	// Publish on Mainflux NATS broker
-	msg := mainflux.Message{
+	msg := broker.Message{
 		Publisher:   thing,
 		Protocol:    protocol,
 		ContentType: "Content-Type",
@@ -112,29 +112,29 @@ func (as *adapterService) Publish(ctx context.Context, token string, m Message) 
 		Payload:     payload,
 	}
 
-	return as.publisher.Publish(ctx, token, msg)
+	return as.broker.Publish(ctx, token, msg)
 }
 
-func (as *adapterService) CreateThing(mfxDevID string, loraDevEUI string) error {
-	return as.thingsRM.Save(mfxDevID, loraDevEUI)
+func (as *adapterService) CreateThing(thingID string, devEUI string) error {
+	return as.thingsRM.Save(thingID, devEUI)
 }
 
-func (as *adapterService) UpdateThing(mfxDevID string, loraDevEUI string) error {
-	return as.thingsRM.Save(mfxDevID, loraDevEUI)
+func (as *adapterService) UpdateThing(thingID string, devEUI string) error {
+	return as.thingsRM.Save(thingID, devEUI)
 }
 
-func (as *adapterService) RemoveThing(mfxDevID string) error {
-	return as.thingsRM.Remove(mfxDevID)
+func (as *adapterService) RemoveThing(thingID string) error {
+	return as.thingsRM.Remove(thingID)
 }
 
-func (as *adapterService) CreateChannel(mfxChanID string, loraAppID string) error {
-	return as.channelsRM.Save(mfxChanID, loraAppID)
+func (as *adapterService) CreateChannel(chanID string, appID string) error {
+	return as.channelsRM.Save(chanID, appID)
 }
 
-func (as *adapterService) UpdateChannel(mfxChanID string, loraAppID string) error {
-	return as.channelsRM.Save(mfxChanID, loraAppID)
+func (as *adapterService) UpdateChannel(chanID string, appID string) error {
+	return as.channelsRM.Save(chanID, appID)
 }
 
-func (as *adapterService) RemoveChannel(mfxChanID string) error {
-	return as.channelsRM.Remove(mfxChanID)
+func (as *adapterService) RemoveChannel(chanID string) error {
+	return as.channelsRM.Remove(chanID)
 }
