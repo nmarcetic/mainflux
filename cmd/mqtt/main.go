@@ -14,12 +14,14 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/mainflux/mainflux"
-	"github.com/mainflux/mainflux/broker"
 	"github.com/mainflux/mainflux/logger"
+	"github.com/mainflux/mainflux/messaging"
+	"github.com/mainflux/mainflux/messaging/nats"
 	mqtt "github.com/mainflux/mainflux/mqtt"
 	mr "github.com/mainflux/mainflux/mqtt/redis"
 	thingsapi "github.com/mainflux/mainflux/things/api/auth/grpc"
 	mp "github.com/mainflux/mproxy/pkg/mqtt"
+	"github.com/mainflux/mproxy/pkg/session"
 	ws "github.com/mainflux/mproxy/pkg/websocket"
 	opentracing "github.com/opentracing/opentracing-go"
 	jconfig "github.com/uber/jaeger-client-go/config"
@@ -128,17 +130,17 @@ func main() {
 
 	cc := thingsapi.NewClient(conn, thingsTracer, cfg.thingsAuthTimeout)
 
-	b, err := broker.New(cfg.natsURL)
+	pub, err := nats.NewPublisher(cfg.natsURL)
 	if err != nil {
-		logger.Error(err.Error())
+		logger.Error(fmt.Sprintf("Failed to connect to NATS: %s", err))
 		os.Exit(1)
 	}
-	defer b.Close()
+	defer pub.Close()
 
 	es := mr.NewEventStore(rc, cfg.instance)
 
 	// Event handler for MQTT hooks
-	evt := mqtt.New(b, cc, es, logger, tracer)
+	evt := mqtt.New([]messaging.Publisher{pub}, cc, es, logger, tracer)
 
 	errs := make(chan error, 2)
 
@@ -257,14 +259,14 @@ func connectToRedis(redisURL, redisPass, redisDB string, logger logger.Logger) *
 	})
 }
 
-func proxyMQTT(cfg config, logger logger.Logger, evt *mqtt.Event, errs chan error) {
+func proxyMQTT(cfg config, logger logger.Logger, evt session.Handler, errs chan error) {
 	address := fmt.Sprintf("%s:%s", cfg.mqttHost, cfg.mqttPort)
 	target := fmt.Sprintf("%s:%s", cfg.mqttTargetHost, cfg.mqttTargetPort)
 	mp := mp.New(address, target, evt, logger)
 
 	errs <- mp.Proxy()
 }
-func proxyWS(cfg config, logger logger.Logger, evt *mqtt.Event, errs chan error) {
+func proxyWS(cfg config, logger logger.Logger, evt session.Handler, errs chan error) {
 	target := fmt.Sprintf("%s:%s", cfg.httpTargetHost, cfg.httpTargetPort)
 	wp := ws.New(target, cfg.httpTargetPath, cfg.httpScheme, evt, logger)
 	http.Handle("/mqtt", wp.Handler())

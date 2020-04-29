@@ -14,8 +14,8 @@ import (
 	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 	"github.com/jmoiron/sqlx"
 	"github.com/mainflux/mainflux"
-	"github.com/mainflux/mainflux/broker"
 	"github.com/mainflux/mainflux/logger"
+	"github.com/mainflux/mainflux/messaging/nats"
 	"github.com/mainflux/mainflux/transformers/senml"
 	"github.com/mainflux/mainflux/writers"
 	"github.com/mainflux/mainflux/writers/api"
@@ -30,7 +30,7 @@ const (
 	defLogLevel        = "error"
 	defNatsURL         = "nats://localhost:4222"
 	defPort            = "8180"
-	defDBHost          = "postgres"
+	defDBHost          = "localhost"
 	defDBPort          = "5432"
 	defDBUser          = "mainflux"
 	defDBPass          = "mainflux"
@@ -40,6 +40,7 @@ const (
 	defDBSSLKey        = ""
 	defDBSSLRootCert   = ""
 	defSubjectsCfgPath = "/config/subjects.toml"
+	defContentType     = "application/senml+json"
 
 	envNatsURL         = "MF_NATS_URL"
 	envLogLevel        = "MF_POSTGRES_WRITER_LOG_LEVEL"
@@ -54,14 +55,16 @@ const (
 	envDBSSLKey        = "MF_POSTGRES_WRITER_DB_SSL_KEY"
 	envDBSSLRootCert   = "MF_POSTGRES_WRITER_DB_SSL_ROOT_CERT"
 	envSubjectsCfgPath = "MF_POSTGRES_WRITER_SUBJECTS_CONFIG"
+	envContentType     = "MF_POSTGRES_WRITER_CONTENT_TYPE"
 )
 
 type config struct {
 	natsURL         string
 	logLevel        string
 	port            string
-	dbConfig        postgres.Config
 	subjectsCfgPath string
+	contentType     string
+	dbConfig        postgres.Config
 }
 
 func main() {
@@ -72,19 +75,19 @@ func main() {
 		log.Fatalf(err.Error())
 	}
 
-	b, err := broker.New(cfg.natsURL)
+	pubSub, err := nats.NewPubSub(cfg.natsURL, "", logger)
 	if err != nil {
-		logger.Error(err.Error())
+		logger.Error(fmt.Sprintf("Failed to connect to NATS: %s", err))
 		os.Exit(1)
 	}
-	defer b.Close()
+	defer pubSub.Close()
 
 	db := connectToDB(cfg.dbConfig, logger)
 	defer db.Close()
 
 	repo := newService(db, logger)
-	st := senml.New()
-	if err = writers.Start(b, repo, st, svcName, cfg.subjectsCfgPath, logger); err != nil {
+	st := senml.New(cfg.contentType)
+	if err = writers.Start(pubSub, repo, st, svcName, cfg.subjectsCfgPath, logger); err != nil {
 		logger.Error(fmt.Sprintf("Failed to create Postgres writer: %s", err))
 	}
 
@@ -119,8 +122,9 @@ func loadConfig() config {
 		natsURL:         mainflux.Env(envNatsURL, defNatsURL),
 		logLevel:        mainflux.Env(envLogLevel, defLogLevel),
 		port:            mainflux.Env(envPort, defPort),
-		dbConfig:        dbConfig,
 		subjectsCfgPath: mainflux.Env(envSubjectsCfgPath, defSubjectsCfgPath),
+		contentType:     mainflux.Env(envContentType, defContentType),
+		dbConfig:        dbConfig,
 	}
 }
 

@@ -8,9 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-
-	"github.com/mainflux/mainflux/things"
-	"github.com/mainflux/mainflux/users"
 )
 
 const (
@@ -27,9 +24,8 @@ const (
 const minPassLen = 8
 
 var (
-	// ErrConflict indicates that create or update of entity failed because
-	// entity with same name already exists.
-	ErrConflict = errors.New("entity already exists")
+	// ErrUnauthorized indicates that entity creation failed.
+	ErrUnauthorized = errors.New("unauthorized, missing credentials")
 
 	// ErrFailedCreation indicates that entity creation failed.
 	ErrFailedCreation = errors.New("failed to create entity")
@@ -37,36 +33,39 @@ var (
 	// ErrFailedUpdate indicates that entity update failed.
 	ErrFailedUpdate = errors.New("failed to update entity")
 
+	// ErrFailedFetch indicates that fetching of entity data failed.
+	ErrFailedFetch = errors.New("failed to fetch entity")
+
+	// ErrFailedRemoval indicates that entity removal failed.
+	ErrFailedRemoval = errors.New("failed to remove entity")
+
+	// ErrFailedConnect indicates that connecting thing to channel failed.
+	ErrFailedConnect = errors.New("failed to connect thing to channel")
+
+	// ErrFailedDisconnect indicates that disconnecting thing from a channel failed.
+	ErrFailedDisconnect = errors.New("failed to disconnect thing from channel")
+
 	// ErrFailedPublish indicates that publishing message failed.
 	ErrFailedPublish = errors.New("failed to publish message")
 
 	// ErrFailedRead indicates that read messages failed.
 	ErrFailedRead = errors.New("failed to read messages")
 
-	// ErrFailedRemoval indicates that entity removal failed.
-	ErrFailedRemoval = errors.New("failed to remove entity")
-
-	// ErrFailedConnection indicates that connecting thing to channel failed.
-	ErrFailedConnection = errors.New("failed to connect thing to channel")
-
-	// ErrFailedDisconnect indicates that disconnecting thing from a channel failed.
-	ErrFailedDisconnect = errors.New("failed to disconnect thing from channel")
-
-	// ErrInvalidArgs indicates that invalid argument was passed.
-	ErrInvalidArgs = errors.New("invalid argument passed")
-
-	// ErrFetchFailed indicates that fetching of entity data failed.
-	ErrFetchFailed = errors.New("failed to fetch entity")
-
-	// ErrUnauthorized indicates unauthorized access.
-	ErrUnauthorized = errors.New("unauthorized access")
-
-	// ErrNotFound indicates that entity doesn't exist.
-	ErrNotFound = errors.New("entity not found")
-
-	// ErrInvalidContentType indicates that nonexistent message content type
+	// ErrInvalidContentType indicates that non-existent message content type
 	// was passed.
 	ErrInvalidContentType = errors.New("Unknown Content Type")
+
+	// ErrFetchVersion indicates that fetching of version failed.
+	ErrFetchVersion = errors.New("failed to fetch version")
+
+	// ErrFailedWhitelist failed to whitelist configs
+	ErrFailedWhitelist = errors.New("failed to whitelist")
+
+	// ErrCerts indicates error fetching certificates.
+	ErrCerts = errors.New("failed to fetch certs data")
+
+	// ErrCertsRemove indicates failure while cleaning up from the Certs service.
+	ErrCertsRemove = errors.New("failed to remove certificate")
 )
 
 // ContentType represents all possible content types.
@@ -75,27 +74,26 @@ type ContentType string
 var _ SDK = (*mfSDK)(nil)
 
 // User represents mainflux user its credentials.
-type User users.User
-
-// Validate returns an error if user representation is invalid.
-func (u User) validate() error {
-	if u.Email == "" {
-		return ErrInvalidArgs
-
-	}
-
-	if len(u.Password) < minPassLen {
-		return ErrInvalidArgs
-	}
-
-	return nil
+type User struct {
+	Email    string                 `json:"email,omitempty"`
+	Password string                 `json:"password,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // Thing represents mainflux thing.
-type Thing things.Thing
+type Thing struct {
+	ID       string                 `json:"id,omitempty"`
+	Name     string                 `json:"name,omitempty"`
+	Key      string                 `json:"key,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
 
 // Channel represents mainflux channel.
-type Channel things.Channel
+type Channel struct {
+	ID       string                 `json:"id,omitempty"`
+	Name     string                 `json:"name,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
 
 // SDK contains Mainflux API.
 type SDK interface {
@@ -175,16 +173,43 @@ type SDK interface {
 
 	// Version returns used mainflux version.
 	Version() (string, error)
+
+	// AddBootstrap add boostrap configuration
+	AddBootstrap(key string, cfg BoostrapConfig) (string, error)
+
+	// View returns Thing Config with given ID belonging to the user identified by the given key.
+	ViewBoostrap(key, id string) (BoostrapConfig, error)
+
+	// Update updates editable fields of the provided Config.
+	UpdateBoostrap(key string, cfg BoostrapConfig) error
+
+	// Remove removes Config with specified key that belongs to the user identified by the given key.
+	RemoveBoostrap(key, id string) error
+
+	// View returns Thing Config with given ID belonging to the user identified by the given key.
+	Boostrap(key, id string) (BoostrapConfig, error)
+
+	// Whitelist updates Thing state Config with given ID belonging to the user identified by the given token.
+	Whitelist(token string, cfg BoostrapConfig) error
+
+	// Cert issues a certificate for a thing required for mtls.
+	Cert(thingID, thingKey, token string) (Cert, error)
+
+	// RemoveCert remove a certificate
+	RemoveCert(id, token string) error
 }
 
 type mfSDK struct {
 	baseURL           string
 	readerURL         string
+	bootstrapURL      string
+	certsURL          string
 	readerPrefix      string
 	usersPrefix       string
 	thingsPrefix      string
 	channelsPrefix    string
 	httpAdapterPrefix string
+	bootstrapPrefix   string
 	msgContentType    ContentType
 	client            *http.Client
 }
@@ -193,10 +218,13 @@ type mfSDK struct {
 type Config struct {
 	BaseURL           string
 	ReaderURL         string
+	BootstrapURL      string
+	CertsURL          string
 	ReaderPrefix      string
 	UsersPrefix       string
 	ThingsPrefix      string
 	HTTPAdapterPrefix string
+	BootstrapPrefix   string
 	MsgContentType    ContentType
 	TLSVerification   bool
 }
@@ -206,10 +234,13 @@ func NewSDK(conf Config) SDK {
 	return &mfSDK{
 		baseURL:           conf.BaseURL,
 		readerURL:         conf.ReaderURL,
+		bootstrapURL:      conf.BootstrapURL,
+		certsURL:          conf.CertsURL,
 		readerPrefix:      conf.ReaderPrefix,
 		usersPrefix:       conf.UsersPrefix,
 		thingsPrefix:      conf.ThingsPrefix,
 		httpAdapterPrefix: conf.HTTPAdapterPrefix,
+		bootstrapPrefix:   conf.BootstrapPrefix,
 		msgContentType:    conf.MsgContentType,
 		client: &http.Client{
 			Transport: &http.Transport{

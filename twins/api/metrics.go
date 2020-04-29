@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/metrics"
-	"github.com/mainflux/mainflux/broker"
+	"github.com/mainflux/mainflux/messaging"
 	"github.com/mainflux/mainflux/twins"
 )
 
@@ -59,7 +59,7 @@ func (ms *metricsMiddleware) ViewTwin(ctx context.Context, token, id string) (vi
 	return ms.svc.ViewTwin(ctx, token, id)
 }
 
-func (ms *metricsMiddleware) ListTwins(ctx context.Context, token string, offset uint64, limit uint64, name string, metadata twins.Metadata) (tw twins.TwinsPage, err error) {
+func (ms *metricsMiddleware) ListTwins(ctx context.Context, token string, offset uint64, limit uint64, name string, metadata twins.Metadata) (tw twins.Page, err error) {
 	defer func(begin time.Time) {
 		ms.counter.With("method", "list_twins").Add(1)
 		ms.latency.With("method", "list_twins").Observe(time.Since(begin).Seconds())
@@ -68,7 +68,7 @@ func (ms *metricsMiddleware) ListTwins(ctx context.Context, token string, offset
 	return ms.svc.ListTwins(ctx, token, offset, limit, name, metadata)
 }
 
-func (ms *metricsMiddleware) SaveStates(msg *broker.Message) error {
+func (ms *metricsMiddleware) SaveStates(msg *messaging.Message) error {
 	defer func(begin time.Time) {
 		ms.counter.With("method", "save_states").Add(1)
 		ms.latency.With("method", "save_states").Observe(time.Since(begin).Seconds())

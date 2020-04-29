@@ -14,8 +14,8 @@ import (
 
 	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 	"github.com/mainflux/mainflux"
-	"github.com/mainflux/mainflux/broker"
 	"github.com/mainflux/mainflux/logger"
+	"github.com/mainflux/mainflux/messaging/nats"
 	"github.com/mainflux/mainflux/transformers/senml"
 	"github.com/mainflux/mainflux/writers"
 	"github.com/mainflux/mainflux/writers/api"
@@ -35,6 +35,7 @@ const (
 	defDBHost          = "localhost"
 	defDBPort          = "27017"
 	defSubjectsCfgPath = "/config/subjects.toml"
+	defContentType     = "application/senml+json"
 
 	envNatsURL         = "MF_NATS_URL"
 	envLogLevel        = "MF_MONGO_WRITER_LOG_LEVEL"
@@ -43,6 +44,7 @@ const (
 	envDBHost          = "MF_MONGO_WRITER_DB_HOST"
 	envDBPort          = "MF_MONGO_WRITER_DB_PORT"
 	envSubjectsCfgPath = "MF_MONGO_WRITER_SUBJECTS_CONFIG"
+	envContentType     = "MF_MONGO_WRITER_CONTENT_TYPE"
 )
 
 type config struct {
@@ -53,6 +55,7 @@ type config struct {
 	dbHost          string
 	dbPort          string
 	subjectsCfgPath string
+	contentType     string
 }
 
 func main() {
@@ -63,12 +66,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	b, err := broker.New(cfg.natsURL)
+	pubSub, err := nats.NewPubSub(cfg.natsURL, "", logger)
 	if err != nil {
-		logger.Error(err.Error())
+		logger.Error(fmt.Sprintf("Failed to connect to NATS: %s", err))
 		os.Exit(1)
 	}
-	defer b.Close()
+	defer pubSub.Close()
 
 	addr := fmt.Sprintf("mongodb://%s:%s", cfg.dbHost, cfg.dbPort)
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(addr))
@@ -83,8 +86,9 @@ func main() {
 	counter, latency := makeMetrics()
 	repo = api.LoggingMiddleware(repo, logger)
 	repo = api.MetricsMiddleware(repo, counter, latency)
-	st := senml.New()
-	if err := writers.Start(b, repo, st, svcName, cfg.subjectsCfgPath, logger); err != nil {
+	st := senml.New(cfg.contentType)
+
+	if err := writers.Start(pubSub, repo, st, svcName, cfg.subjectsCfgPath, logger); err != nil {
 		logger.Error(fmt.Sprintf("Failed to start MongoDB writer: %s", err))
 		os.Exit(1)
 	}
@@ -111,6 +115,7 @@ func loadConfigs() config {
 		dbHost:          mainflux.Env(envDBHost, defDBHost),
 		dbPort:          mainflux.Env(envDBPort, defDBPort),
 		subjectsCfgPath: mainflux.Env(envSubjectsCfgPath, defSubjectsCfgPath),
+		contentType:     mainflux.Env(envContentType, defContentType),
 	}
 }
 

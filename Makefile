@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 BUILD_DIR = build
-SERVICES = users things http ws coap lora influxdb-writer influxdb-reader mongodb-writer \
+SERVICES = users things http coap lora influxdb-writer influxdb-reader mongodb-writer \
 	mongodb-reader cassandra-writer cassandra-reader postgres-writer postgres-reader cli \
-	bootstrap opcua authn twins mqtt
+	bootstrap opcua authn twins mqtt provision
 DOCKERS = $(addprefix docker_,$(SERVICES))
 DOCKERS_DEV = $(addprefix docker_dev_,$(SERVICES))
 CGO_ENABLED ?= 0
@@ -71,7 +71,7 @@ test:
 
 proto:
 	protoc --gofast_out=plugins=grpc:. *.proto
-	protoc --gofast_out=plugins=grpc:. broker/*.proto
+	protoc --gogo_out=plugins=grpc:. messaging/*.proto
 
 $(SERVICES):
 	$(call compile_service,$(@))
@@ -83,7 +83,6 @@ $(DOCKERS_DEV):
 	$(call make_docker_dev,$(@))
 
 dockers: $(DOCKERS)
-
 dockers_dev: $(DOCKERS_DEV)
 
 define docker_push
