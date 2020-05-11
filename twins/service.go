@@ -10,7 +10,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/golang/protobuf/ptypes"
 	"github.com/mainflux/mainflux/errors"
 	"github.com/mainflux/mainflux/logger"
 	"github.com/mainflux/mainflux/messaging"
@@ -52,11 +51,6 @@ type Service interface {
 	// ViewTwin retrieves data about twin with the provided
 	// ID belonging to the user identified by the provided key.
 	ViewTwin(ctx context.Context, token, id string) (tw Twin, err error)
-
-	// ViewTwinByThing retrieves data about subset of twins that represent
-	// specified thing belong to the user identified by
-	// the provided key.
-	ViewTwinByThing(ctx context.Context, token, thingid string) (Twin, error)
 
 	// RemoveTwin removes the twin identified with the provided ID, that
 	// belongs to the user identified by the provided key.
@@ -184,11 +178,6 @@ func (ts *twinsService) UpdateTwin(ctx context.Context, token string, twin Twin,
 		tw.Name = twin.Name
 	}
 
-	if twin.ThingID != "" {
-		revision = true
-		tw.ThingID = twin.ThingID
-	}
-
 	if len(def.Attributes) > 0 {
 		revision = true
 		def.Created = time.Now()
@@ -235,15 +224,6 @@ func (ts *twinsService) ViewTwin(ctx context.Context, token, id string) (tw Twin
 	b, err = json.Marshal(twin)
 
 	return twin, nil
-}
-
-func (ts *twinsService) ViewTwinByThing(ctx context.Context, token, thingid string) (Twin, error) {
-	_, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token})
-	if err != nil {
-		return Twin{}, ErrUnauthorizedAccess
-	}
-
-	return ts.twins.RetrieveByThing(ctx, thingid)
 }
 
 func (ts *twinsService) RemoveTwin(ctx context.Context, token, id string) (err error) {
@@ -428,17 +408,12 @@ func (ts *twinsService) publish(twinID *string, err *error, succOp, failOp strin
 		pl = []byte(fmt.Sprintf("{\"deleted\":\"%s\"}", *twinID))
 	}
 
-	created, timeErr := ptypes.TimestampProto(time.Now())
-	if timeErr != nil {
-		return
-	}
-
 	msg := messaging.Message{
 		Channel:   ts.channelID,
 		Subtopic:  op,
 		Payload:   pl,
 		Publisher: publisher,
-		Created:   created,
+		Created:   time.Now().UnixNano(),
 	}
 
 	if err := ts.publisher.Publish(msg.Channel, msg); err != nil {
