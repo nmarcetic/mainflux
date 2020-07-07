@@ -27,6 +27,7 @@ import (
 	"github.com/mainflux/mainflux"
 	authapi "github.com/mainflux/mainflux/authn/api/grpc"
 	"github.com/mainflux/mainflux/logger"
+	uuidProvider "github.com/mainflux/mainflux/pkg/uuid"
 	"github.com/mainflux/mainflux/things"
 	"github.com/mainflux/mainflux/things/api"
 	authgrpcapi "github.com/mainflux/mainflux/things/api/auth/grpc"
@@ -35,7 +36,6 @@ import (
 	"github.com/mainflux/mainflux/things/postgres"
 	rediscache "github.com/mainflux/mainflux/things/redis"
 	localusers "github.com/mainflux/mainflux/things/users"
-	"github.com/mainflux/mainflux/things/uuid"
 	stdprometheus "github.com/prometheus/client_golang/prometheus"
 	jconfig "github.com/uber/jaeger-client-go/config"
 	"google.golang.org/grpc"
@@ -69,7 +69,7 @@ const (
 	defSingleUserToken = ""
 	defJaegerURL       = ""
 	defAuthnURL        = "localhost:8181"
-	defAuthnTimeout    = "1" // in seconds
+	defAuthnTimeout    = "1s"
 
 	envLogLevel        = "MF_THINGS_LOG_LEVEL"
 	envDBHost          = "MF_THINGS_DB_HOST"
@@ -179,7 +179,7 @@ func loadConfig() config {
 		log.Fatalf("Invalid value passed for %s\n", envClientTLS)
 	}
 
-	timeout, err := strconv.ParseInt(mainflux.Env(envAuthnTimeout, defAuthnTimeout), 10, 64)
+	authnTimeout, err := time.ParseDuration(mainflux.Env(envAuthnTimeout, defAuthnTimeout))
 	if err != nil {
 		log.Fatalf("Invalid %s value: %s", envAuthnTimeout, err.Error())
 	}
@@ -216,7 +216,7 @@ func loadConfig() config {
 		singleUserToken: mainflux.Env(envSingleUserToken, defSingleUserToken),
 		jaegerURL:       mainflux.Env(envJaegerURL, defJaegerURL),
 		authnURL:        mainflux.Env(envAuthnURL, defAuthnURL),
-		authnTimeout:    time.Duration(timeout) * time.Second,
+		authnTimeout:    authnTimeout,
 	}
 }
 
@@ -315,9 +315,9 @@ func newService(auth mainflux.AuthNServiceClient, dbTracer opentracing.Tracer, c
 
 	thingCache := rediscache.NewThingCache(cacheClient)
 	thingCache = tracing.ThingCacheMiddleware(cacheTracer, thingCache)
-	idp := uuid.New()
+	up := uuidProvider.New()
 
-	svc := things.New(auth, thingsRepo, channelsRepo, chanCache, thingCache, idp)
+	svc := things.New(auth, thingsRepo, channelsRepo, chanCache, thingCache, up)
 	svc = rediscache.NewEventStoreMiddleware(svc, esClient)
 	svc = api.LoggingMiddleware(svc, logger)
 	svc = api.MetricsMiddleware(

@@ -13,13 +13,13 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/mainflux/mainflux"
-	"github.com/mainflux/mainflux/errors"
+	"github.com/mainflux/mainflux/pkg/errors"
 	"github.com/opentracing/opentracing-go/mocktracer"
 
 	"github.com/mainflux/mainflux/bootstrap"
 	"github.com/mainflux/mainflux/bootstrap/mocks"
 	"github.com/mainflux/mainflux/bootstrap/redis/producer"
-	mfsdk "github.com/mainflux/mainflux/sdk/go"
+	mfsdk "github.com/mainflux/mainflux/pkg/sdk/go"
 	"github.com/mainflux/mainflux/things"
 	httpapi "github.com/mainflux/mainflux/things/api/things/http"
 	"github.com/stretchr/testify/assert"
@@ -30,8 +30,6 @@ const (
 	streamID      = "mainflux.bootstrap"
 	email         = "user@example.com"
 	validToken    = "validToken"
-	unknownID     = "1"
-	unknownKey    = "2"
 	channelsNum   = 3
 	defaultTimout = 5
 
@@ -64,7 +62,7 @@ var (
 )
 
 func newService(auth mainflux.AuthNServiceClient, url string) bootstrap.Service {
-	configs := mocks.NewConfigsRepository(map[string]string{unknownID: unknownKey})
+	configs := mocks.NewConfigsRepository()
 	config := mfsdk.Config{
 		BaseURL: url,
 	}

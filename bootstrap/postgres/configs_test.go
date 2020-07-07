@@ -11,7 +11,7 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/mainflux/mainflux/bootstrap"
 	"github.com/mainflux/mainflux/bootstrap/postgres"
-	"github.com/mainflux/mainflux/errors"
+	"github.com/mainflux/mainflux/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -577,69 +577,6 @@ func TestListExisting(t *testing.T) {
 		existing, err := repo.ListExisting(tc.owner, tc.connections)
 		assert.Nil(t, err, fmt.Sprintf("%s: unexpected error: %s", tc.desc, err))
 		assert.ElementsMatch(t, tc.existing, existing, fmt.Sprintf("%s: expected %s got %s\n", tc.desc, tc.existing, existing))
-	}
-}
-
-func TestSaveUnknown(t *testing.T) {
-	repo := postgres.NewConfigRepository(db, testLog)
-
-	cases := []struct {
-		desc        string
-		externalID  string
-		externalKey string
-		err         error
-	}{
-		{
-			desc:        "save unknown",
-			externalID:  "unknown",
-			externalKey: "unknown",
-			err:         nil,
-		},
-		{
-			desc:        "save invalid unknown",
-			externalID:  "unknown",
-			externalKey: "",
-			err:         nil,
-		},
-	}
-	for _, tc := range cases {
-		err := repo.SaveUnknown(tc.externalKey, tc.externalID)
-		assert.True(t, errors.Contains(err, tc.err), fmt.Sprintf("%s: expected %s got %s\n", tc.desc, tc.err, err))
-	}
-}
-
-func TestRetrieveUnknown(t *testing.T) {
-	repo := postgres.NewConfigRepository(db, testLog)
-
-	for i := 0; i < numConfigs; i++ {
-		id, err := uuid.NewV4()
-		require.Nil(t, err, fmt.Sprintf("Got unexpected error: %s.\n", err))
-		repo.SaveUnknown(id.String(), id.String())
-	}
-
-	cases := []struct {
-		desc   string
-		offset uint64
-		limit  uint64
-		size   int
-	}{
-		{
-			desc:   "retrieve all",
-			offset: 0,
-			limit:  uint64(numConfigs),
-			size:   numConfigs,
-		},
-		{
-			desc:   "retrieve a subset",
-			offset: 5,
-			limit:  uint64(numConfigs - 5),
-			size:   numConfigs - 5,
-		},
-	}
-	for _, tc := range cases {
-		ret := repo.RetrieveUnknown(tc.offset, tc.limit)
-		size := len(ret.Configs)
-		assert.Equal(t, tc.size, size, fmt.Sprintf("%s: expected %d got %d\n", tc.desc, tc.size, size))
 	}
 }
 

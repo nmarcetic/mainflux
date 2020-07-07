@@ -14,7 +14,7 @@ import (
 
 const (
 	saveOp             = "save_op"
-	retrieveByIDOp     = "retrieve_by_id"
+	retrieveByEmailOp  = "retrieve_by_email"
 	generateResetToken = "generate_reset_token"
 	updatePassword     = "update_password"
 	sendPasswordReset  = "send_reset_password"
@@ -52,12 +52,12 @@ func (urm userRepositoryMiddleware) UpdateUser(ctx context.Context, user users.U
 	return urm.repo.UpdateUser(ctx, user)
 }
 
-func (urm userRepositoryMiddleware) RetrieveByID(ctx context.Context, id string) (users.User, error) {
-	span := createSpan(ctx, urm.tracer, retrieveByIDOp)
+func (urm userRepositoryMiddleware) RetrieveByEmail(ctx context.Context, email string) (users.User, error) {
+	span := createSpan(ctx, urm.tracer, retrieveByEmailOp)
 	defer span.Finish()
 	ctx = opentracing.ContextWithSpan(ctx, span)
 
-	return urm.repo.RetrieveByID(ctx, id)
+	return urm.repo.RetrieveByEmail(ctx, email)
 }
 
 func (urm userRepositoryMiddleware) UpdatePassword(ctx context.Context, email, password string) error {

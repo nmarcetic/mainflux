@@ -35,7 +35,7 @@ import (
 const (
 	defLogLevel          = "error"
 	defPort              = "8180"
-	defDB                = "messages"
+	defDB                = "mainflux"
 	defDBHost            = "localhost"
 	defDBPort            = "27017"
 	defClientTLS         = "false"
@@ -44,7 +44,7 @@ const (
 	defServerKey         = ""
 	defJaegerURL         = ""
 	defThingsAuthURL     = "localhost:8181"
-	defThingsAuthTimeout = "1" // in seconds
+	defThingsAuthTimeout = "1s"
 
 	envLogLevel          = "MF_MONGO_READER_LOG_LEVEL"
 	envPort              = "MF_MONGO_READER_PORT"
@@ -56,7 +56,7 @@ const (
 	envServerCert        = "MF_MONGO_READER_SERVER_CERT"
 	envServerKey         = "MF_MONGO_READER_SERVER_KEY"
 	envJaegerURL         = "MF_JAEGER_URL"
-	envThingsAuthURL     = "MF_ThINGS_AUTH_GRPC_URL"
+	envThingsAuthURL     = "MF_THINGS_AUTH_GRPC_URL"
 	envThingsAuthTimeout = "MF_THINGS_AUTH_GRPC_TIMEOUT"
 )
 
@@ -113,7 +113,7 @@ func loadConfigs() config {
 		log.Fatalf("Invalid value passed for %s\n", envClientTLS)
 	}
 
-	timeout, err := strconv.ParseInt(mainflux.Env(envThingsAuthTimeout, defThingsAuthTimeout), 10, 64)
+	authTimeout, err := time.ParseDuration(mainflux.Env(envThingsAuthTimeout, defThingsAuthTimeout))
 	if err != nil {
 		log.Fatalf("Invalid %s value: %s", envThingsAuthTimeout, err.Error())
 	}
@@ -130,7 +130,7 @@ func loadConfigs() config {
 		serverKey:         mainflux.Env(envServerKey, defServerKey),
 		jaegerURL:         mainflux.Env(envJaegerURL, defJaegerURL),
 		thingsAuthURL:     mainflux.Env(envThingsAuthURL, defThingsAuthURL),
-		thingsAuthTimeout: time.Duration(timeout) * time.Second,
+		thingsAuthTimeout: authTimeout,
 	}
 }
 

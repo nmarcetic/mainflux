@@ -17,7 +17,6 @@ import (
 	"github.com/mainflux/mainflux/twins"
 	httpapi "github.com/mainflux/mainflux/twins/api/http"
 	"github.com/mainflux/mainflux/twins/mocks"
-
 	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -89,9 +88,12 @@ func newServer(svc twins.Service) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
-func toJSON(data interface{}) string {
-	jsonData, _ := json.Marshal(data)
-	return string(jsonData)
+func toJSON(data interface{}) (string, error) {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	return string(jsonData), nil
 }
 
 func TestAddTwin(t *testing.T) {
@@ -100,10 +102,12 @@ func TestAddTwin(t *testing.T) {
 	defer ts.Close()
 
 	tw := twinReq{}
-	data := toJSON(tw)
+	data, err := toJSON(tw)
+	require.Nil(t, err, fmt.Sprintf("unexpected error: %s", err))
 
 	tw.Name = invalidName
-	invalidData := toJSON(tw)
+	invalidData, err := toJSON(tw)
+	require.Nil(t, err, fmt.Sprintf("unexpected error: %s", err))
 
 	cases := []struct {
 		desc        string
@@ -208,11 +212,13 @@ func TestUpdateTwin(t *testing.T) {
 	require.Nil(t, err, fmt.Sprintf("unexpected error: %s", err))
 
 	twin.Name = twinName
-	data := toJSON(twin)
+	data, err := toJSON(twin)
+	require.Nil(t, err, fmt.Sprintf("unexpected error: %s", err))
 
 	tw := twin
 	tw.Name = invalidName
-	invalidData := toJSON(tw)
+	invalidData, err := toJSON(tw)
+	require.Nil(t, err, fmt.Sprintf("unexpected error: %s", err))
 
 	cases := []struct {
 		desc        string

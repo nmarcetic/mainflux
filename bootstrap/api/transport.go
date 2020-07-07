@@ -16,7 +16,7 @@ import (
 	"github.com/go-zoo/bone"
 	"github.com/mainflux/mainflux"
 	"github.com/mainflux/mainflux/bootstrap"
-	"github.com/mainflux/mainflux/errors"
+	"github.com/mainflux/mainflux/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -75,12 +75,6 @@ func MakeHandler(svc bootstrap.Service, reader bootstrap.ConfigReader) http.Hand
 	r.Get("/things/configs", kithttp.NewServer(
 		listEndpoint(svc),
 		decodeListRequest,
-		encodeResponse,
-		opts...))
-
-	r.Get("/things/unknown/configs", kithttp.NewServer(
-		listEndpoint(svc),
-		decodeUnknownRequest,
 		encodeResponse,
 		opts...))
 
@@ -167,27 +161,6 @@ func decodeUpdateConnRequest(_ context.Context, r *http.Request) (interface{}, e
 	req.id = bone.GetValue(r, "id")
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		return nil, errors.Wrap(bootstrap.ErrMalformedEntity, err)
-	}
-
-	return req, nil
-}
-
-func decodeUnknownRequest(_ context.Context, r *http.Request) (interface{}, error) {
-	q, err := url.ParseQuery(r.URL.RawQuery)
-	if err != nil {
-		return nil, errInvalidQueryParams
-	}
-
-	offset, limit, err := parsePagePrams(q)
-	if err != nil {
-		return nil, err
-	}
-
-	req := listReq{
-		key:    r.Header.Get("Authorization"),
-		filter: bootstrap.Filter{Unknown: true},
-		offset: offset,
-		limit:  limit,
 	}
 
 	return req, nil
