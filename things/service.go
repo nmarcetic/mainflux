@@ -6,10 +6,14 @@ package things
 import (
 	"context"
 
+	"github.com/mainflux/mainflux/internal/groups"
 	"github.com/mainflux/mainflux/pkg/errors"
 
 	"github.com/mainflux/mainflux"
+	uuidProvider "github.com/mainflux/mainflux/pkg/uuid"
 )
+
+const things = "things"
 
 var (
 	// ErrUnauthorizedAccess indicates missing or invalid credentials provided
@@ -36,6 +40,12 @@ var (
 
 	// ErrDisconnect indicates error in removing connection
 	ErrDisconnect = errors.New("remove connection failed")
+
+	// ErrCreateGroup indicates error in creating group.
+	ErrCreateGroup = errors.New("failed to create group")
+
+	// ErrFailedToRetrieveThings failed to retrieve things.
+	ErrFailedToRetrieveThings = errors.New("failed to retrieve group members")
 )
 
 // Service specifies an API that must be fullfiled by the domain service
@@ -58,7 +68,7 @@ type Service interface {
 
 	// ListThings retrieves data about subset of things that belongs to the
 	// user identified by the provided key.
-	ListThings(ctx context.Context, token string, offset, limit uint64, name string, metadata Metadata) (Page, error)
+	ListThings(ctx context.Context, token string, pm PageMetadata) (Page, error)
 
 	// ListThingsByChannel retrieves data about subset of things that are
 	// connected or not connected to specified channel and belong to the user identified by
@@ -82,7 +92,7 @@ type Service interface {
 
 	// ListChannels retrieves data about subset of channels that belongs to the
 	// user identified by the provided key.
-	ListChannels(ctx context.Context, token string, offset, limit uint64, name string, m Metadata) (ChannelsPage, error)
+	ListChannels(ctx context.Context, token string, pm PageMetadata) (ChannelsPage, error)
 
 	// ListChannelsByThing retrieves data about subset of channels that have
 	// specified thing connected or not connected to them and belong to the user identified by
@@ -110,14 +120,19 @@ type Service interface {
 
 	// Identify returns thing ID for given thing key.
 	Identify(ctx context.Context, key string) (string, error)
+
+	groups.Service
 }
 
 // PageMetadata contains page metadata that helps navigation.
 type PageMetadata struct {
-	Total  uint64
-	Offset uint64
-	Limit  uint64
-	Name   string
+	Total    uint64
+	Offset   uint64
+	Limit    uint64
+	Name     string
+	Order    string
+	Dir      string
+	Metadata map[string]interface{}
 }
 
 var _ Service = (*thingsService)(nil)
@@ -126,16 +141,18 @@ type thingsService struct {
 	auth         mainflux.AuthNServiceClient
 	things       ThingRepository
 	channels     ChannelRepository
+	groups       groups.Repository
 	channelCache ChannelCache
 	thingCache   ThingCache
 	uuidProvider mainflux.UUIDProvider
 }
 
 // New instantiates the things service implementation.
-func New(auth mainflux.AuthNServiceClient, things ThingRepository, channels ChannelRepository, ccache ChannelCache, tcache ThingCache, up mainflux.UUIDProvider) Service {
+func New(auth mainflux.AuthNServiceClient, things ThingRepository, channels ChannelRepository, groups groups.Repository, ccache ChannelCache, tcache ThingCache, up mainflux.UUIDProvider) Service {
 	return &thingsService{
 		auth:         auth,
 		things:       things,
+		groups:       groups,
 		channels:     channels,
 		channelCache: ccache,
 		thingCache:   tcache,
@@ -155,7 +172,7 @@ func (ts *thingsService) CreateThings(ctx context.Context, token string, things 
 			return []Thing{}, errors.Wrap(ErrCreateUUID, err)
 		}
 
-		things[i].Owner = res.GetValue()
+		things[i].Owner = res.GetEmail()
 
 		if things[i].Key == "" {
 			things[i].Key, err = ts.uuidProvider.ID()
@@ -174,7 +191,7 @@ func (ts *thingsService) UpdateThing(ctx context.Context, token string, thing Th
 		return errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 
-	thing.Owner = res.GetValue()
+	thing.Owner = res.GetEmail()
 
 	return ts.things.Update(ctx, thing)
 }
@@ -185,7 +202,7 @@ func (ts *thingsService) UpdateKey(ctx context.Context, token, id, key string) e
 		return errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 
-	owner := res.GetValue()
+	owner := res.GetEmail()
 
 	return ts.things.UpdateKey(ctx, owner, id, key)
 }
@@ -196,16 +213,16 @@ func (ts *thingsService) ViewThing(ctx context.Context, token, id string) (Thing
 		return Thing{}, errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 
-	return ts.things.RetrieveByID(ctx, res.GetValue(), id)
+	return ts.things.RetrieveByID(ctx, res.GetEmail(), id)
 }
 
-func (ts *thingsService) ListThings(ctx context.Context, token string, offset, limit uint64, name string, metadata Metadata) (Page, error) {
+func (ts *thingsService) ListThings(ctx context.Context, token string, pm PageMetadata) (Page, error) {
 	res, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return Page{}, errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 
-	return ts.things.RetrieveAll(ctx, res.GetValue(), offset, limit, name, metadata)
+	return ts.things.RetrieveAll(ctx, res.GetEmail(), pm)
 }
 
 func (ts *thingsService) ListThingsByChannel(ctx context.Context, token, channel string, offset, limit uint64, connected bool) (Page, error) {
@@ -214,7 +231,7 @@ func (ts *thingsService) ListThingsByChannel(ctx context.Context, token, channel
 		return Page{}, errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 
-	return ts.things.RetrieveByChannel(ctx, res.GetValue(), channel, offset, limit, connected)
+	return ts.things.RetrieveByChannel(ctx, res.GetEmail(), channel, offset, limit, connected)
 }
 
 func (ts *thingsService) RemoveThing(ctx context.Context, token, id string) error {
@@ -226,7 +243,7 @@ func (ts *thingsService) RemoveThing(ctx context.Context, token, id string) erro
 	if err := ts.thingCache.Remove(ctx, id); err != nil {
 		return err
 	}
-	return ts.things.Remove(ctx, res.GetValue(), id)
+	return ts.things.Remove(ctx, res.GetEmail(), id)
 }
 
 func (ts *thingsService) CreateChannels(ctx context.Context, token string, channels ...Channel) ([]Channel, error) {
@@ -241,7 +258,7 @@ func (ts *thingsService) CreateChannels(ctx context.Context, token string, chann
 			return []Channel{}, errors.Wrap(ErrCreateUUID, err)
 		}
 
-		channels[i].Owner = res.GetValue()
+		channels[i].Owner = res.GetEmail()
 	}
 
 	return ts.channels.Save(ctx, channels...)
@@ -253,7 +270,7 @@ func (ts *thingsService) UpdateChannel(ctx context.Context, token string, channe
 		return errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 
-	channel.Owner = res.GetValue()
+	channel.Owner = res.GetEmail()
 	return ts.channels.Update(ctx, channel)
 }
 
@@ -263,16 +280,16 @@ func (ts *thingsService) ViewChannel(ctx context.Context, token, id string) (Cha
 		return Channel{}, errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 
-	return ts.channels.RetrieveByID(ctx, res.GetValue(), id)
+	return ts.channels.RetrieveByID(ctx, res.GetEmail(), id)
 }
 
-func (ts *thingsService) ListChannels(ctx context.Context, token string, offset, limit uint64, name string, m Metadata) (ChannelsPage, error) {
+func (ts *thingsService) ListChannels(ctx context.Context, token string, pm PageMetadata) (ChannelsPage, error) {
 	res, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return ChannelsPage{}, errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 
-	return ts.channels.RetrieveAll(ctx, res.GetValue(), offset, limit, name, m)
+	return ts.channels.RetrieveAll(ctx, res.GetEmail(), pm)
 }
 
 func (ts *thingsService) ListChannelsByThing(ctx context.Context, token, thing string, offset, limit uint64, connected bool) (ChannelsPage, error) {
@@ -281,7 +298,7 @@ func (ts *thingsService) ListChannelsByThing(ctx context.Context, token, thing s
 		return ChannelsPage{}, errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 
-	return ts.channels.RetrieveByThing(ctx, res.GetValue(), thing, offset, limit, connected)
+	return ts.channels.RetrieveByThing(ctx, res.GetEmail(), thing, offset, limit, connected)
 }
 
 func (ts *thingsService) RemoveChannel(ctx context.Context, token, id string) error {
@@ -294,7 +311,7 @@ func (ts *thingsService) RemoveChannel(ctx context.Context, token, id string) er
 		return err
 	}
 
-	return ts.channels.Remove(ctx, res.GetValue(), id)
+	return ts.channels.Remove(ctx, res.GetEmail(), id)
 }
 
 func (ts *thingsService) Connect(ctx context.Context, token string, chIDs, thIDs []string) error {
@@ -303,7 +320,7 @@ func (ts *thingsService) Connect(ctx context.Context, token string, chIDs, thIDs
 		return errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 
-	return ts.channels.Connect(ctx, res.GetValue(), chIDs, thIDs)
+	return ts.channels.Connect(ctx, res.GetEmail(), chIDs, thIDs)
 }
 
 func (ts *thingsService) Disconnect(ctx context.Context, token, chanID, thingID string) error {
@@ -316,7 +333,7 @@ func (ts *thingsService) Disconnect(ctx context.Context, token, chanID, thingID 
 		return err
 	}
 
-	return ts.channels.Disconnect(ctx, res.GetValue(), chanID, thingID)
+	return ts.channels.Disconnect(ctx, res.GetEmail(), chanID, thingID)
 }
 
 func (ts *thingsService) CanAccessByKey(ctx context.Context, chanID, thingKey string) (string, error) {
@@ -381,4 +398,110 @@ func (ts *thingsService) hasThing(ctx context.Context, chanID, thingKey string) 
 		return "", ErrEntityConnected
 	}
 	return thingID, nil
+}
+
+func (ts *thingsService) CreateGroup(ctx context.Context, token string, g groups.Group) (string, error) {
+	user, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token})
+	if err != nil {
+		return "", errors.Wrap(ErrUnauthorizedAccess, err)
+	}
+
+	uid, err := uuidProvider.New().ID()
+	if err != nil {
+		return "", errors.Wrap(ErrCreateGroup, err)
+	}
+
+	g.ID = uid
+	g.OwnerID = user.GetId()
+	if _, err := ts.groups.Save(ctx, g); err != nil {
+		return "", err
+	}
+
+	return g.ID, nil
+}
+
+func (ts *thingsService) ListGroups(ctx context.Context, token string, level uint64, gm groups.Metadata) (groups.GroupPage, error) {
+	if _, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token}); err != nil {
+		return groups.GroupPage{}, errors.Wrap(ErrUnauthorizedAccess, err)
+	}
+	return ts.groups.RetrieveAll(ctx, level, gm)
+
+}
+
+func (ts *thingsService) ListParents(ctx context.Context, token string, childID string, level uint64, gm groups.Metadata) (groups.GroupPage, error) {
+	if _, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token}); err != nil {
+		return groups.GroupPage{}, errors.Wrap(ErrUnauthorizedAccess, err)
+	}
+	return ts.groups.RetrieveAllParents(ctx, childID, level, gm)
+}
+
+func (ts *thingsService) ListChildren(ctx context.Context, token string, parentID string, level uint64, gm groups.Metadata) (groups.GroupPage, error) {
+	if _, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token}); err != nil {
+		return groups.GroupPage{}, errors.Wrap(ErrUnauthorizedAccess, err)
+	}
+	return ts.groups.RetrieveAllChildren(ctx, parentID, level, gm)
+}
+
+func (ts *thingsService) ListMembers(ctx context.Context, token, groupID string, offset, limit uint64, gm groups.Metadata) (groups.MemberPage, error) {
+	if _, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token}); err != nil {
+		return groups.MemberPage{}, errors.Wrap(ErrUnauthorizedAccess, err)
+	}
+	p, err := ts.groups.Members(ctx, groupID, offset, limit, gm)
+	if err != nil {
+		return groups.MemberPage{}, errors.Wrap(ErrFailedToRetrieveThings, err)
+	}
+	mp := groups.MemberPage{
+		PageMetadata: groups.PageMetadata{
+			Total:  p.Total,
+			Offset: p.Offset,
+			Limit:  p.Limit,
+			Name:   things,
+		},
+		Members: make([]groups.Member, 0),
+	}
+	mp.Members = append(mp.Members, p.Members)
+	return mp, nil
+}
+
+func (ts *thingsService) RemoveGroup(ctx context.Context, token, id string) error {
+	if _, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token}); err != nil {
+		return errors.Wrap(ErrUnauthorizedAccess, err)
+	}
+	return ts.groups.Delete(ctx, id)
+}
+
+func (ts *thingsService) Unassign(ctx context.Context, token, memberID, groupID string) error {
+	if _, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token}); err != nil {
+		return errors.Wrap(ErrUnauthorizedAccess, err)
+	}
+	return ts.groups.Unassign(ctx, memberID, groupID)
+}
+
+func (ts *thingsService) UpdateGroup(ctx context.Context, token string, g groups.Group) (groups.Group, error) {
+	if _, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token}); err != nil {
+		return groups.Group{}, errors.Wrap(ErrUnauthorizedAccess, err)
+	}
+
+	return ts.groups.Update(ctx, g)
+}
+
+func (ts *thingsService) ViewGroup(ctx context.Context, token, id string) (groups.Group, error) {
+	if _, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token}); err != nil {
+		return groups.Group{}, errors.Wrap(ErrUnauthorizedAccess, err)
+	}
+	return ts.groups.RetrieveByID(ctx, id)
+}
+
+func (ts *thingsService) Assign(ctx context.Context, token, memberID, groupID string) error {
+	if _, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token}); err != nil {
+		return errors.Wrap(ErrUnauthorizedAccess, err)
+	}
+	return ts.groups.Assign(ctx, memberID, groupID)
+}
+
+func (ts *thingsService) ListMemberships(ctx context.Context, token string, memberID string, offset, limit uint64, gm groups.Metadata) (groups.GroupPage, error) {
+	if _, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token}); err != nil {
+		return groups.GroupPage{}, errors.Wrap(ErrUnauthorizedAccess, err)
+	}
+	return ts.groups.Memberships(ctx, memberID, offset, limit, gm)
 }

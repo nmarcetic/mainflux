@@ -22,8 +22,8 @@ func key() authn.Key {
 	return authn.Key{
 		ID:        "id",
 		Type:      authn.UserKey,
-		Issuer:    "user@email.com",
-		Secret:    "",
+		Subject:   "user@email.com",
+		IssuerID:  "",
 		IssuedAt:  time.Now().UTC().Add(-10 * time.Second).Round(time.Second),
 		ExpiresAt: exp,
 	}
@@ -31,9 +31,6 @@ func key() authn.Key {
 
 func TestIssue(t *testing.T) {
 	tokenizer := jwt.New(secret)
-
-	emptyIssuer := key()
-	emptyIssuer.Issuer = ""
 
 	cases := []struct {
 		desc string
@@ -59,10 +56,10 @@ func TestParse(t *testing.T) {
 	token, err := tokenizer.Issue(key())
 	require.Nil(t, err, fmt.Sprintf("issuing key expected to succeed: %s", err))
 
-	userKey := key()
-	userKey.Type = authn.APIKey
-	userKey.ExpiresAt = time.Now().UTC().Add(-1 * time.Minute).Round(time.Second)
-	userToken, err := tokenizer.Issue(userKey)
+	apiKey := key()
+	apiKey.Type = authn.APIKey
+	apiKey.ExpiresAt = time.Now().UTC().Add(-1 * time.Minute).Round(time.Second)
+	apiToken, err := tokenizer.Issue(apiKey)
 	require.Nil(t, err, fmt.Sprintf("issuing user key expected to succeed: %s", err))
 
 	expKey := key()
@@ -88,7 +85,6 @@ func TestParse(t *testing.T) {
 			token: "invalid",
 			err:   authn.ErrUnauthorizedAccess,
 		},
-
 		{
 			desc:  "parse expired key",
 			key:   authn.Key{},
@@ -96,10 +92,10 @@ func TestParse(t *testing.T) {
 			err:   authn.ErrKeyExpired,
 		},
 		{
-			desc:  "parse expired user key",
-			key:   userKey,
-			token: userToken,
-			err:   nil,
+			desc:  "parse expired API key",
+			key:   apiKey,
+			token: apiToken,
+			err:   authn.ErrAPIKeyExpired,
 		},
 	}
 

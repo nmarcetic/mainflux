@@ -4,6 +4,8 @@ go 1.14
 
 require (
 	github.com/BurntSushi/toml v0.3.1
+	github.com/casbin/casbin-pg-adapter v0.1.6
+	github.com/casbin/casbin/v2 v2.18.0
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/docker/docker v1.13.1
 	github.com/eclipse/paho.mqtt.golang v1.2.0
@@ -22,7 +24,7 @@ require (
 	github.com/jmoiron/sqlx v1.2.1-0.20190826204134-d7d95172beb5
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.7.0
-	github.com/mainflux/mproxy v0.2.1
+	github.com/mainflux/mproxy v0.2.2
 	github.com/mainflux/senml v1.5.0
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/nats-io/nats.go v1.10.0

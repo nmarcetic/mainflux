@@ -17,7 +17,6 @@ import (
 	kithttp "github.com/go-kit/kit/transport/http"
 	"github.com/go-zoo/bone"
 	"github.com/mainflux/mainflux"
-	log "github.com/mainflux/mainflux/logger"
 	"github.com/mainflux/mainflux/users"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -29,6 +28,7 @@ const (
 	offsetKey   = "offset"
 	limitKey    = "limit"
 	nameKey     = "name"
+	emailKey    = "email"
 	metadataKey = "metadata"
 
 	defOffset = 0
@@ -43,13 +43,10 @@ var (
 
 	// ErrFailedDecode indicates failed to decode request body
 	ErrFailedDecode = errors.New("failed to decode request body")
-	logger          log.Logger
 )
 
 // MakeHandler returns a HTTP handler for API endpoints.
-func MakeHandler(svc users.Service, tracer opentracing.Tracer, l log.Logger) http.Handler {
-	logger = l
-
+func MakeHandler(svc users.Service, tracer opentracing.Tracer) http.Handler {
 	opts := []kithttp.ServerOption{
 		kithttp.ServerErrorEncoder(encodeError),
 	}
@@ -63,9 +60,23 @@ func MakeHandler(svc users.Service, tracer opentracing.Tracer, l log.Logger) htt
 		opts...,
 	))
 
-	mux.Get("/users", kithttp.NewServer(
+	mux.Get("/users/profile", kithttp.NewServer(
+		kitot.TraceServer(tracer, "view_profile")(viewProfileEndpoint(svc)),
+		decodeViewProfile,
+		encodeResponse,
+		opts...,
+	))
+
+	mux.Get("/users/:userID", kithttp.NewServer(
 		kitot.TraceServer(tracer, "view_user")(viewUserEndpoint(svc)),
 		decodeViewUser,
+		encodeResponse,
+		opts...,
+	))
+
+	mux.Get("/users", kithttp.NewServer(
+		kitot.TraceServer(tracer, "list_users")(listUsersEndpoint(svc)),
+		decodeListUsers,
 		encodeResponse,
 		opts...,
 	))
@@ -78,8 +89,8 @@ func MakeHandler(svc users.Service, tracer opentracing.Tracer, l log.Logger) htt
 	))
 
 	mux.Get("/users/:userID/groups", kithttp.NewServer(
-		kitot.TraceServer(tracer, "memberships")(listUserGroupsEndpoint(svc)),
-		decodeListUserGroupRequest,
+		kitot.TraceServer(tracer, "list_memberships")(listMembershipsEndpoint(svc)),
+		decodeListUserGroupsRequest,
 		encodeResponse,
 		opts...,
 	))
@@ -113,8 +124,8 @@ func MakeHandler(svc users.Service, tracer opentracing.Tracer, l log.Logger) htt
 	))
 
 	mux.Get("/groups", kithttp.NewServer(
-		kitot.TraceServer(tracer, "groups")(listGroupsEndpoint(svc)),
-		decodeListUserGroupRequest,
+		kitot.TraceServer(tracer, "list_groups")(listGroupsEndpoint(svc)),
+		decodeListUserGroupsRequest,
 		encodeResponse,
 		opts...,
 	))
@@ -141,22 +152,22 @@ func MakeHandler(svc users.Service, tracer opentracing.Tracer, l log.Logger) htt
 	))
 
 	mux.Get("/groups/:groupID/users", kithttp.NewServer(
-		kitot.TraceServer(tracer, "members")(listUsersForGroupEndpoint(svc)),
-		decodeListUserGroupRequest,
+		kitot.TraceServer(tracer, "list_members")(listMembersEndpoint(svc)),
+		decodeListUserGroupsRequest,
 		encodeResponse,
 		opts...,
 	))
 
 	mux.Patch("/groups/:groupID", kithttp.NewServer(
 		kitot.TraceServer(tracer, "update_group")(updateGroupEndpoint(svc)),
-		decodeGroupCreate,
+		decodeGroupUpdate,
 		encodeResponse,
 		opts...,
 	))
 
 	mux.Get("/groups/:groupID/groups", kithttp.NewServer(
 		kitot.TraceServer(tracer, "list_children_groups")(listGroupsEndpoint(svc)),
-		decodeListUserGroupRequest,
+		decodeListUserGroupsRequest,
 		encodeResponse,
 		opts...,
 	))
@@ -183,7 +194,46 @@ func MakeHandler(svc users.Service, tracer opentracing.Tracer, l log.Logger) htt
 
 func decodeViewUser(_ context.Context, r *http.Request) (interface{}, error) {
 	req := viewUserReq{
+		token:  r.Header.Get("Authorization"),
+		userID: bone.GetValue(r, "userID"),
+	}
+	return req, nil
+}
+
+func decodeViewProfile(_ context.Context, r *http.Request) (interface{}, error) {
+	req := viewUserReq{
 		token: r.Header.Get("Authorization"),
+	}
+	return req, nil
+}
+
+func decodeListUsers(_ context.Context, r *http.Request) (interface{}, error) {
+	o, err := readUintQuery(r, offsetKey, defOffset)
+	if err != nil {
+		return nil, err
+	}
+
+	l, err := readUintQuery(r, limitKey, defLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	e, err := readStringQuery(r, emailKey)
+	if err != nil {
+		return nil, err
+	}
+
+	m, err := readMetadataQuery(r, metadataKey)
+	if err != nil {
+		return nil, err
+	}
+
+	req := listUsersReq{
+		token:    r.Header.Get("Authorization"),
+		offset:   o,
+		limit:    l,
+		email:    e,
+		metadata: m,
 	}
 	return req, nil
 }
@@ -191,7 +241,7 @@ func decodeViewUser(_ context.Context, r *http.Request) (interface{}, error) {
 func decodeUpdateUser(_ context.Context, r *http.Request) (interface{}, error) {
 	var req updateUserReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return nil, err
+		return nil, errors.Wrap(users.ErrMalformedEntity, err)
 	}
 
 	req.token = r.Header.Get("Authorization")
@@ -262,7 +312,7 @@ func decodeGroupCreate(_ context.Context, r *http.Request) (interface{}, error) 
 
 	var req createGroupReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return nil, errors.Wrap(ErrFailedDecode, err)
+		return nil, errors.Wrap(users.ErrMalformedEntity, err)
 	}
 
 	req.token = r.Header.Get("Authorization")
@@ -270,11 +320,23 @@ func decodeGroupCreate(_ context.Context, r *http.Request) (interface{}, error) 
 	return req, nil
 }
 
-func decodeGroupRequest(_ context.Context, r *http.Request) (interface{}, error) {
+func decodeGroupUpdate(_ context.Context, r *http.Request) (interface{}, error) {
 	if !strings.Contains(r.Header.Get("Content-Type"), contentType) {
 		return nil, ErrUnsupportedContentType
 	}
 
+	req := updateGroupReq{
+		token: r.Header.Get("Authorization"),
+		id:    bone.GetValue(r, "groupID"),
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return nil, errors.Wrap(users.ErrMalformedEntity, err)
+	}
+
+	return req, nil
+}
+
+func decodeGroupRequest(_ context.Context, r *http.Request) (interface{}, error) {
 	req := groupReq{
 		token:   r.Header.Get("Authorization"),
 		groupID: bone.GetValue(r, "groupID"),
@@ -284,10 +346,7 @@ func decodeGroupRequest(_ context.Context, r *http.Request) (interface{}, error)
 	return req, nil
 }
 
-func decodeListUserGroupRequest(_ context.Context, r *http.Request) (interface{}, error) {
-	if !strings.Contains(r.Header.Get("Content-Type"), contentType) {
-		return nil, ErrUnsupportedContentType
-	}
+func decodeListUserGroupsRequest(_ context.Context, r *http.Request) (interface{}, error) {
 	o, err := readUintQuery(r, offsetKey, defOffset)
 	if err != nil {
 		return nil, err
@@ -324,10 +383,6 @@ func decodeListUserGroupRequest(_ context.Context, r *http.Request) (interface{}
 }
 
 func decodeUserGroupRequest(_ context.Context, r *http.Request) (interface{}, error) {
-	if !strings.Contains(r.Header.Get("Content-Type"), contentType) {
-		return nil, ErrUnsupportedContentType
-	}
-
 	req := userGroupReq{
 		token:   r.Header.Get("Authorization"),
 		groupID: bone.GetValue(r, "groupID"),
@@ -376,7 +431,7 @@ func encodeError(_ context.Context, err error, w http.ResponseWriter) {
 		case errors.Contains(errorVal, users.ErrUserNotFound):
 			w.WriteHeader(http.StatusBadRequest)
 		case errors.Contains(errorVal, users.ErrRecoveryToken):
-			w.WriteHeader(http.StatusInternalServerError)
+			w.WriteHeader(http.StatusNotFound)
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
 		}

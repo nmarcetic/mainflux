@@ -8,11 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/mainflux/mainflux"
-	log "github.com/mainflux/mainflux/logger"
 	sdk "github.com/mainflux/mainflux/pkg/sdk/go"
 	"github.com/mainflux/mainflux/users"
 	"github.com/mainflux/mainflux/users/api"
@@ -36,8 +34,7 @@ func newUserService() users.Service {
 }
 
 func newUserServer(svc users.Service) *httptest.Server {
-	logger, _ := log.New(os.Stdout, log.Info.String())
-	mux := api.MakeHandler(svc, mocktracer.New(), logger)
+	mux := api.MakeHandler(svc, mocktracer.New())
 	return httptest.NewServer(mux)
 }
 
@@ -122,7 +119,7 @@ func TestCreateToken(t *testing.T) {
 	mainfluxSDK := sdk.NewSDK(sdkConf)
 	user := sdk.User{Email: "user@example.com", Password: "password"}
 	auth := mocks.NewAuthService(map[string]string{user.Email: user.Email})
-	tkn, _ := auth.Issue(context.Background(), &mainflux.IssueReq{Issuer: user.Email, Type: 0})
+	tkn, _ := auth.Issue(context.Background(), &mainflux.IssueReq{Id: user.ID, Email: user.Email, Type: 0})
 	token := tkn.GetValue()
 	mainfluxSDK.CreateUser(user)
 	cases := []struct {

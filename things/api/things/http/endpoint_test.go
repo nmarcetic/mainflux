@@ -80,7 +80,7 @@ func newService(tokens map[string]string) things.Service {
 	thingCache := mocks.NewThingCache()
 	uuidProvider := uuid.NewMock()
 
-	return things.New(auth, thingsRepo, channelsRepo, chanCache, thingCache, uuidProvider)
+	return things.New(auth, thingsRepo, channelsRepo, nil, chanCache, thingCache, uuidProvider)
 }
 
 func newServer(svc things.Service) *httptest.Server {
@@ -662,6 +662,34 @@ func TestListThings(t *testing.T) {
 			status: http.StatusOK,
 			url:    fmt.Sprintf("%s?offset=%d&limit=%d", thingURL, 0, 5),
 			res:    data[0:5],
+		},
+		{
+			desc:   "get a list of things ordered by name descendent",
+			auth:   token,
+			status: http.StatusOK,
+			url:    fmt.Sprintf("%s?offset=%d&limit=%d&order=name&dir=desc", thingURL, 0, 5),
+			res:    data[0:5],
+		},
+		{
+			desc:   "get a list of things ordered by name ascendent",
+			auth:   token,
+			status: http.StatusOK,
+			url:    fmt.Sprintf("%s?offset=%d&limit=%d&order=name&dir=asc", thingURL, 0, 5),
+			res:    data[0:5],
+		},
+		{
+			desc:   "get a list of things with invalid order",
+			auth:   token,
+			status: http.StatusBadRequest,
+			url:    fmt.Sprintf("%s?offset=%d&limit=%d&order=wrong", thingURL, 0, 5),
+			res:    nil,
+		},
+		{
+			desc:   "get a list of things with invalid dir",
+			auth:   token,
+			status: http.StatusBadRequest,
+			url:    fmt.Sprintf("%s?offset=%d&limit=%d&order=name&dir=wrong", thingURL, 0, 5),
+			res:    nil,
 		},
 		{
 			desc:   "get a list of things with invalid token",
@@ -1424,6 +1452,34 @@ func TestListChannels(t *testing.T) {
 			status: http.StatusOK,
 			url:    fmt.Sprintf("%s?offset=%d&limit=%d", channelURL, 0, 6),
 			res:    channels[0:6],
+		},
+		{
+			desc:   "get a list of channels ordered by name descendent",
+			auth:   token,
+			status: http.StatusOK,
+			url:    fmt.Sprintf("%s?offset=%d&limit=%d&order=name&dir=desc", channelURL, 0, 6),
+			res:    channels[0:6],
+		},
+		{
+			desc:   "get a list of channels ordered by name ascendent",
+			auth:   token,
+			status: http.StatusOK,
+			url:    fmt.Sprintf("%s?offset=%d&limit=%d&order=name&dir=asc", channelURL, 0, 6),
+			res:    channels[0:6],
+		},
+		{
+			desc:   "get a list of channels with invalid order",
+			auth:   token,
+			status: http.StatusBadRequest,
+			url:    fmt.Sprintf("%s?offset=%d&limit=%d&order=wrong", channelURL, 0, 6),
+			res:    nil,
+		},
+		{
+			desc:   "get a list of channels with invalid dir",
+			auth:   token,
+			status: http.StatusBadRequest,
+			url:    fmt.Sprintf("%s?offset=%d&limit=%d&order=name&dir=wrong", channelURL, 0, 6),
+			res:    nil,
 		},
 		{
 			desc:   "get a list of channels with invalid token",

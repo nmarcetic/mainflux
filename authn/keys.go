@@ -15,6 +15,10 @@ var (
 
 	// ErrKeyExpired indicates that the Key is expired.
 	ErrKeyExpired = errors.New("use of expired key")
+
+	// ErrAPIKeyExpired indicates that the Key is expired
+	// and that the key type is API key.
+	ErrAPIKeyExpired = errors.New("use of expired API key")
 )
 
 const (
@@ -30,10 +34,16 @@ const (
 type Key struct {
 	ID        string
 	Type      uint32
-	Issuer    string
-	Secret    string
+	IssuerID  string
+	Subject   string
 	IssuedAt  time.Time
 	ExpiresAt time.Time
+}
+
+// Identity contains ID and Email.
+type Identity struct {
+	ID    string
+	Email string
 }
 
 // Expired verifies if the key is expired.
