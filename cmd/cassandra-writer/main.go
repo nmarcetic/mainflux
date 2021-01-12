@@ -16,12 +16,12 @@ import (
 	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 	"github.com/gocql/gocql"
 	"github.com/mainflux/mainflux"
+	"github.com/mainflux/mainflux/consumers"
+	"github.com/mainflux/mainflux/consumers/api"
+	"github.com/mainflux/mainflux/consumers/writers/cassandra"
 	"github.com/mainflux/mainflux/logger"
 	"github.com/mainflux/mainflux/pkg/messaging/nats"
 	"github.com/mainflux/mainflux/pkg/transformers/senml"
-	"github.com/mainflux/mainflux/writers"
-	"github.com/mainflux/mainflux/writers/api"
-	"github.com/mainflux/mainflux/writers/cassandra"
 	stdprometheus "github.com/prometheus/client_golang/prometheus"
 )
 
@@ -29,36 +29,36 @@ const (
 	svcName = "cassandra-writer"
 	sep     = ","
 
-	defNatsURL         = "nats://localhost:4222"
-	defLogLevel        = "error"
-	defPort            = "8180"
-	defCluster         = "127.0.0.1"
-	defKeyspace        = "mainflux"
-	defDBUser          = "mainflux"
-	defDBPass          = "mainflux"
-	defDBPort          = "9042"
-	defSubjectsCfgPath = "/config/subjects.toml"
-	defContentType     = "application/senml+json"
+	defNatsURL     = "nats://localhost:4222"
+	defLogLevel    = "error"
+	defPort        = "8180"
+	defCluster     = "127.0.0.1"
+	defKeyspace    = "mainflux"
+	defDBUser      = "mainflux"
+	defDBPass      = "mainflux"
+	defDBPort      = "9042"
+	defConfigPath  = "/config.toml"
+	defContentType = "application/senml+json"
 
-	envNatsURL         = "MF_NATS_URL"
-	envLogLevel        = "MF_CASSANDRA_WRITER_LOG_LEVEL"
-	envPort            = "MF_CASSANDRA_WRITER_PORT"
-	envCluster         = "MF_CASSANDRA_WRITER_DB_CLUSTER"
-	envKeyspace        = "MF_CASSANDRA_WRITER_DB_KEYSPACE"
-	envDBUser          = "MF_CASSANDRA_WRITER_DB_USER"
-	envDBPass          = "MF_CASSANDRA_WRITER_DB_PASS"
-	envDBPort          = "MF_CASSANDRA_WRITER_DB_PORT"
-	envSubjectsCfgPath = "MF_CASSANDRA_WRITER_SUBJECTS_CONFIG"
-	envContentType     = "MF_CASSANDRA_WRITER_CONTENT_TYPE"
+	envNatsURL     = "MF_NATS_URL"
+	envLogLevel    = "MF_CASSANDRA_WRITER_LOG_LEVEL"
+	envPort        = "MF_CASSANDRA_WRITER_PORT"
+	envCluster     = "MF_CASSANDRA_WRITER_DB_CLUSTER"
+	envKeyspace    = "MF_CASSANDRA_WRITER_DB_KEYSPACE"
+	envDBUser      = "MF_CASSANDRA_WRITER_DB_USER"
+	envDBPass      = "MF_CASSANDRA_WRITER_DB_PASS"
+	envDBPort      = "MF_CASSANDRA_WRITER_DB_PORT"
+	envConfigPath  = "MF_CASSANDRA_WRITER_CONFIG_PATH"
+	envContentType = "MF_CASSANDRA_WRITER_CONTENT_TYPE"
 )
 
 type config struct {
-	natsURL         string
-	logLevel        string
-	port            string
-	subjectsCfgPath string
-	contentType     string
-	dbCfg           cassandra.DBConfig
+	natsURL     string
+	logLevel    string
+	port        string
+	configPath  string
+	contentType string
+	dbCfg       cassandra.DBConfig
 }
 
 func main() {
@@ -81,7 +81,8 @@ func main() {
 
 	repo := newService(session, logger)
 	st := senml.New(cfg.contentType)
-	if err := writers.Start(pubSub, repo, st, svcName, cfg.subjectsCfgPath, logger); err != nil {
+
+	if err := consumers.Start(pubSub, repo, st, cfg.configPath, logger); err != nil {
 		logger.Error(fmt.Sprintf("Failed to create Cassandra writer: %s", err))
 	}
 
@@ -114,12 +115,12 @@ func loadConfig() config {
 	}
 
 	return config{
-		natsURL:         mainflux.Env(envNatsURL, defNatsURL),
-		logLevel:        mainflux.Env(envLogLevel, defLogLevel),
-		port:            mainflux.Env(envPort, defPort),
-		subjectsCfgPath: mainflux.Env(envSubjectsCfgPath, defSubjectsCfgPath),
-		contentType:     mainflux.Env(envContentType, defContentType),
-		dbCfg:           dbCfg,
+		natsURL:     mainflux.Env(envNatsURL, defNatsURL),
+		logLevel:    mainflux.Env(envLogLevel, defLogLevel),
+		port:        mainflux.Env(envPort, defPort),
+		configPath:  mainflux.Env(envConfigPath, defConfigPath),
+		contentType: mainflux.Env(envContentType, defContentType),
+		dbCfg:       dbCfg,
 	}
 }
 
@@ -133,7 +134,7 @@ func connectToCassandra(dbCfg cassandra.DBConfig, logger logger.Logger) *gocql.S
 	return session
 }
 
-func newService(session *gocql.Session, logger logger.Logger) writers.MessageRepository {
+func newService(session *gocql.Session, logger logger.Logger) consumers.Consumer {
 	repo := cassandra.New(session)
 	repo = api.LoggingMiddleware(repo, logger)
 	repo = api.MetricsMiddleware(

@@ -14,12 +14,12 @@ import (
 	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 	"github.com/jmoiron/sqlx"
 	"github.com/mainflux/mainflux"
+	"github.com/mainflux/mainflux/consumers"
+	"github.com/mainflux/mainflux/consumers/api"
+	"github.com/mainflux/mainflux/consumers/writers/postgres"
 	"github.com/mainflux/mainflux/logger"
 	"github.com/mainflux/mainflux/pkg/messaging/nats"
 	"github.com/mainflux/mainflux/pkg/transformers/senml"
-	"github.com/mainflux/mainflux/writers"
-	"github.com/mainflux/mainflux/writers/api"
-	"github.com/mainflux/mainflux/writers/postgres"
 	stdprometheus "github.com/prometheus/client_golang/prometheus"
 )
 
@@ -27,44 +27,44 @@ const (
 	svcName = "postgres-writer"
 	sep     = ","
 
-	defLogLevel        = "error"
-	defNatsURL         = "nats://localhost:4222"
-	defPort            = "8180"
-	defDBHost          = "localhost"
-	defDBPort          = "5432"
-	defDBUser          = "mainflux"
-	defDBPass          = "mainflux"
-	defDB              = "mainflux"
-	defDBSSLMode       = "disable"
-	defDBSSLCert       = ""
-	defDBSSLKey        = ""
-	defDBSSLRootCert   = ""
-	defSubjectsCfgPath = "/config/subjects.toml"
-	defContentType     = "application/senml+json"
+	defLogLevel      = "error"
+	defNatsURL       = "nats://localhost:4222"
+	defPort          = "8180"
+	defDBHost        = "localhost"
+	defDBPort        = "5432"
+	defDBUser        = "mainflux"
+	defDBPass        = "mainflux"
+	defDB            = "mainflux"
+	defDBSSLMode     = "disable"
+	defDBSSLCert     = ""
+	defDBSSLKey      = ""
+	defDBSSLRootCert = ""
+	defConfigPath    = "/config.toml"
+	defContentType   = "application/senml+json"
 
-	envNatsURL         = "MF_NATS_URL"
-	envLogLevel        = "MF_POSTGRES_WRITER_LOG_LEVEL"
-	envPort            = "MF_POSTGRES_WRITER_PORT"
-	envDBHost          = "MF_POSTGRES_WRITER_DB_HOST"
-	envDBPort          = "MF_POSTGRES_WRITER_DB_PORT"
-	envDBUser          = "MF_POSTGRES_WRITER_DB_USER"
-	envDBPass          = "MF_POSTGRES_WRITER_DB_PASS"
-	envDB              = "MF_POSTGRES_WRITER_DB"
-	envDBSSLMode       = "MF_POSTGRES_WRITER_DB_SSL_MODE"
-	envDBSSLCert       = "MF_POSTGRES_WRITER_DB_SSL_CERT"
-	envDBSSLKey        = "MF_POSTGRES_WRITER_DB_SSL_KEY"
-	envDBSSLRootCert   = "MF_POSTGRES_WRITER_DB_SSL_ROOT_CERT"
-	envSubjectsCfgPath = "MF_POSTGRES_WRITER_SUBJECTS_CONFIG"
-	envContentType     = "MF_POSTGRES_WRITER_CONTENT_TYPE"
+	envNatsURL       = "MF_NATS_URL"
+	envLogLevel      = "MF_POSTGRES_WRITER_LOG_LEVEL"
+	envPort          = "MF_POSTGRES_WRITER_PORT"
+	envDBHost        = "MF_POSTGRES_WRITER_DB_HOST"
+	envDBPort        = "MF_POSTGRES_WRITER_DB_PORT"
+	envDBUser        = "MF_POSTGRES_WRITER_DB_USER"
+	envDBPass        = "MF_POSTGRES_WRITER_DB_PASS"
+	envDB            = "MF_POSTGRES_WRITER_DB"
+	envDBSSLMode     = "MF_POSTGRES_WRITER_DB_SSL_MODE"
+	envDBSSLCert     = "MF_POSTGRES_WRITER_DB_SSL_CERT"
+	envDBSSLKey      = "MF_POSTGRES_WRITER_DB_SSL_KEY"
+	envDBSSLRootCert = "MF_POSTGRES_WRITER_DB_SSL_ROOT_CERT"
+	envConfigPath    = "MF_POSTGRES_WRITER_CONFIG_PATH"
+	envContentType   = "MF_POSTGRES_WRITER_CONTENT_TYPE"
 )
 
 type config struct {
-	natsURL         string
-	logLevel        string
-	port            string
-	subjectsCfgPath string
-	contentType     string
-	dbConfig        postgres.Config
+	natsURL     string
+	logLevel    string
+	port        string
+	configPath  string
+	contentType string
+	dbConfig    postgres.Config
 }
 
 func main() {
@@ -87,7 +87,8 @@ func main() {
 
 	repo := newService(db, logger)
 	st := senml.New(cfg.contentType)
-	if err = writers.Start(pubSub, repo, st, svcName, cfg.subjectsCfgPath, logger); err != nil {
+
+	if err = consumers.Start(pubSub, repo, st, cfg.configPath, logger); err != nil {
 		logger.Error(fmt.Sprintf("Failed to create Postgres writer: %s", err))
 	}
 
@@ -119,12 +120,12 @@ func loadConfig() config {
 	}
 
 	return config{
-		natsURL:         mainflux.Env(envNatsURL, defNatsURL),
-		logLevel:        mainflux.Env(envLogLevel, defLogLevel),
-		port:            mainflux.Env(envPort, defPort),
-		subjectsCfgPath: mainflux.Env(envSubjectsCfgPath, defSubjectsCfgPath),
-		contentType:     mainflux.Env(envContentType, defContentType),
-		dbConfig:        dbConfig,
+		natsURL:     mainflux.Env(envNatsURL, defNatsURL),
+		logLevel:    mainflux.Env(envLogLevel, defLogLevel),
+		port:        mainflux.Env(envPort, defPort),
+		configPath:  mainflux.Env(envConfigPath, defConfigPath),
+		contentType: mainflux.Env(envContentType, defContentType),
+		dbConfig:    dbConfig,
 	}
 }
 
@@ -137,7 +138,7 @@ func connectToDB(dbConfig postgres.Config, logger logger.Logger) *sqlx.DB {
 	return db
 }
 
-func newService(db *sqlx.DB, logger logger.Logger) writers.MessageRepository {
+func newService(db *sqlx.DB, logger logger.Logger) consumers.Consumer {
 	svc := postgres.New(db)
 	svc = api.LoggingMiddleware(svc, logger)
 	svc = api.MetricsMiddleware(
