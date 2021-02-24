@@ -29,4 +29,8 @@ Pull request commit must be [signed](https://docs.github.com/en/github/authentic
 
 **Note**: There are several other organizations/users that couldn't publicly share their usage details but are active project contributors and Mainflux Community members.
 
+
 ## Adopters list (alphabetical)
+
+
+**Note:** The list is maintained by the user themselves. If you find yourself on this list, and you think it's inappropriate. Please contact [project maintainers](https://github.com/mainflux/mainflux/blob/master/MAINTAINERS) and you will be permanently removed from the list.
