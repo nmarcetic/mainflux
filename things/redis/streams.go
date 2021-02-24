@@ -91,8 +91,8 @@ func (es eventStore) ListThings(ctx context.Context, token string, pm things.Pag
 	return es.svc.ListThings(ctx, token, pm)
 }
 
-func (es eventStore) ListThingsByChannel(ctx context.Context, token, id string, offset, limit uint64, connected bool) (things.Page, error) {
-	return es.svc.ListThingsByChannel(ctx, token, id, offset, limit, connected)
+func (es eventStore) ListThingsByChannel(ctx context.Context, token, chID string, pm things.PageMetadata) (things.Page, error) {
+	return es.svc.ListThingsByChannel(ctx, token, chID, pm)
 }
 
 func (es eventStore) RemoveThing(ctx context.Context, token, id string) error {
@@ -165,8 +165,8 @@ func (es eventStore) ListChannels(ctx context.Context, token string, pm things.P
 	return es.svc.ListChannels(ctx, token, pm)
 }
 
-func (es eventStore) ListChannelsByThing(ctx context.Context, token, id string, offset, limit uint64, connected bool) (things.ChannelsPage, error) {
-	return es.svc.ListChannelsByThing(ctx, token, id, offset, limit, connected)
+func (es eventStore) ListChannelsByThing(ctx context.Context, token, thID string, pm things.PageMetadata) (things.ChannelsPage, error) {
+	return es.svc.ListChannelsByThing(ctx, token, thID, pm)
 }
 
 func (es eventStore) RemoveChannel(ctx context.Context, token, id string) error {
@@ -235,6 +235,10 @@ func (es eventStore) CanAccessByKey(ctx context.Context, chanID string, key stri
 
 func (es eventStore) CanAccessByID(ctx context.Context, chanID string, thingID string) error {
 	return es.svc.CanAccessByID(ctx, chanID, thingID)
+}
+
+func (es eventStore) IsChannelOwner(ctx context.Context, owner, chanID string) error {
+	return es.svc.IsChannelOwner(ctx, owner, chanID)
 }
 
 func (es eventStore) Identify(ctx context.Context, key string) (string, error) {

@@ -54,7 +54,7 @@ var (
 // Service specifies an API that must be fullfiled by the domain service
 // implementation, and all of its decorators (e.g. logging & metrics).
 type Service interface {
-	// CreateThings adds a list of things to the user identified by the provided key.
+	// CreateThings adds things to the user identified by the provided key.
 	CreateThings(ctx context.Context, token string, things ...Thing) ([]Thing, error)
 
 	// UpdateThing updates the thing identified by the provided ID, that
@@ -76,13 +76,13 @@ type Service interface {
 	// ListThingsByChannel retrieves data about subset of things that are
 	// connected or not connected to specified channel and belong to the user identified by
 	// the provided key.
-	ListThingsByChannel(ctx context.Context, token, channel string, offset, limit uint64, connected bool) (Page, error)
+	ListThingsByChannel(ctx context.Context, token, chID string, pm PageMetadata) (Page, error)
 
 	// RemoveThing removes the thing identified with the provided ID, that
 	// belongs to the user identified by the provided key.
 	RemoveThing(ctx context.Context, token, id string) error
 
-	// CreateChannels adds a list of channels to the user identified by the provided key.
+	// CreateChannels adds channels to the user identified by the provided key.
 	CreateChannels(ctx context.Context, token string, channels ...Channel) ([]Channel, error)
 
 	// UpdateChannel updates the channel identified by the provided ID, that
@@ -100,7 +100,7 @@ type Service interface {
 	// ListChannelsByThing retrieves data about subset of channels that have
 	// specified thing connected or not connected to them and belong to the user identified by
 	// the provided key.
-	ListChannelsByThing(ctx context.Context, token, thing string, offset, limit uint64, connected bool) (ChannelsPage, error)
+	ListChannelsByThing(ctx context.Context, token, thID string, pm PageMetadata) (ChannelsPage, error)
 
 	// RemoveChannel removes the thing identified by the provided ID, that
 	// belongs to the user identified by the provided key.
@@ -121,6 +121,10 @@ type Service interface {
 	// the given thing and returns error if it cannot.
 	CanAccessByID(ctx context.Context, chanID, thingID string) error
 
+	// IsChannelOwner determines whether the channel can be accessed by
+	// the given user and returns error if it cannot.
+	IsChannelOwner(ctx context.Context, owner, chanID string) error
+
 	// Identify returns thing ID for given thing key.
 	Identify(ctx context.Context, key string) (string, error)
 
@@ -129,13 +133,14 @@ type Service interface {
 
 // PageMetadata contains page metadata that helps navigation.
 type PageMetadata struct {
-	Total    uint64
-	Offset   uint64
-	Limit    uint64
-	Name     string
-	Order    string
-	Dir      string
-	Metadata map[string]interface{}
+	Total     uint64
+	Offset    uint64
+	Limit     uint64
+	Name      string
+	Order     string
+	Dir       string
+	Metadata  map[string]interface{}
+	Connected bool // Used for connected or diconnected lists
 }
 
 var _ Service = (*thingsService)(nil)
@@ -230,13 +235,13 @@ func (ts *thingsService) ListThings(ctx context.Context, token string, pm PageMe
 	return ts.things.RetrieveAll(ctx, res.GetEmail(), pm)
 }
 
-func (ts *thingsService) ListThingsByChannel(ctx context.Context, token, channel string, offset, limit uint64, connected bool) (Page, error) {
+func (ts *thingsService) ListThingsByChannel(ctx context.Context, token, chID string, pm PageMetadata) (Page, error) {
 	res, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return Page{}, errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 
-	return ts.things.RetrieveByChannel(ctx, res.GetEmail(), channel, offset, limit, connected)
+	return ts.things.RetrieveByChannel(ctx, res.GetEmail(), chID, pm)
 }
 
 func (ts *thingsService) RemoveThing(ctx context.Context, token, id string) error {
@@ -297,13 +302,13 @@ func (ts *thingsService) ListChannels(ctx context.Context, token string, pm Page
 	return ts.channels.RetrieveAll(ctx, res.GetEmail(), pm)
 }
 
-func (ts *thingsService) ListChannelsByThing(ctx context.Context, token, thing string, offset, limit uint64, connected bool) (ChannelsPage, error) {
+func (ts *thingsService) ListChannelsByThing(ctx context.Context, token, thID string, pm PageMetadata) (ChannelsPage, error) {
 	res, err := ts.auth.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return ChannelsPage{}, errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 
-	return ts.channels.RetrieveByThing(ctx, res.GetEmail(), thing, offset, limit, connected)
+	return ts.channels.RetrieveByThing(ctx, res.GetEmail(), thID, pm)
 }
 
 func (ts *thingsService) RemoveChannel(ctx context.Context, token, id string) error {
@@ -376,6 +381,13 @@ func (ts *thingsService) CanAccessByID(ctx context.Context, chanID, thingID stri
 	return nil
 }
 
+func (ts *thingsService) IsChannelOwner(ctx context.Context, owner, chanID string) error {
+	if _, err := ts.channels.RetrieveByID(ctx, owner, chanID); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (ts *thingsService) Identify(ctx context.Context, key string) (string, error) {
 	id, err := ts.thingCache.ID(ctx, key)
 	if err == nil {
@@ -430,7 +442,6 @@ func (ts *thingsService) ListGroups(ctx context.Context, token string, level uin
 		return groups.GroupPage{}, errors.Wrap(ErrUnauthorizedAccess, err)
 	}
 	return ts.groups.RetrieveAll(ctx, level, gm)
-
 }
 
 func (ts *thingsService) ListParents(ctx context.Context, token string, childID string, level uint64, gm groups.Metadata) (groups.GroupPage, error) {

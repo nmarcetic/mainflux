@@ -172,11 +172,11 @@ func (svc *mainfluxThings) ListThings(context.Context, string, things.PageMetada
 	panic("not implemented")
 }
 
-func (svc *mainfluxThings) ListChannelsByThing(context.Context, string, string, uint64, uint64, bool) (things.ChannelsPage, error) {
+func (svc *mainfluxThings) ListChannelsByThing(context.Context, string, string, things.PageMetadata) (things.ChannelsPage, error) {
 	panic("not implemented")
 }
 
-func (svc *mainfluxThings) ListThingsByChannel(context.Context, string, string, uint64, uint64, bool) (things.Page, error) {
+func (svc *mainfluxThings) ListThingsByChannel(context.Context, string, string, things.PageMetadata) (things.Page, error) {
 	panic("not implemented")
 }
 
@@ -215,6 +215,10 @@ func (svc *mainfluxThings) CanAccessByKey(context.Context, string, string) (stri
 }
 
 func (svc *mainfluxThings) CanAccessByID(context.Context, string, string) error {
+	panic("not implemented")
+}
+
+func (svc *mainfluxThings) IsChannelOwner(context.Context, string, string) error {
 	panic("not implemented")
 }
 
