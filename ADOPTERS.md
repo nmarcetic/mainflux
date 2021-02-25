@@ -27,10 +27,10 @@ Pull request commit must be [signed](https://docs.github.com/en/github/authentic
 
 **The list of organizations/users that have publicly shared the usage of Mainflux:**
 
-**Note**: There are several other organizations/users that couldn't publicly share their usage details but are active project contributors and Mainflux Community members.
+**Note**: Several other organizations/users couldn't publicly share their usage details but are active project contributors and Mainflux Community members.
 
 
 ## Adopters list (alphabetical)
 
 
-**Note:** The list is maintained by the user themselves. If you find yourself on this list, and you think it's inappropriate. Please contact [project maintainers](https://github.com/mainflux/mainflux/blob/master/MAINTAINERS) and you will be permanently removed from the list.
+**Note:** The list is maintained by the users themselves. If you find yourself on this list, and you think it's inappropriate. Please contact [project maintainers](https://github.com/mainflux/mainflux/blob/master/MAINTAINERS) and you will be permanently removed from the list.
