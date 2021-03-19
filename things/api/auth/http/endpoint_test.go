@@ -28,7 +28,6 @@ const (
 	email       = "user@example.com"
 	token       = "token"
 	wrong       = "wrong_value"
-	wrongID     = "0"
 )
 
 var (
@@ -75,7 +74,7 @@ func newService(tokens map[string]string) things.Service {
 	thingCache := mocks.NewThingCache()
 	idProvider := uuid.NewMock()
 
-	return things.New(auth, thingsRepo, channelsRepo, nil, chanCache, thingCache, idProvider)
+	return things.New(auth, thingsRepo, channelsRepo, chanCache, thingCache, idProvider)
 }
 
 func newServer(svc things.Service) *httptest.Server {
@@ -211,7 +210,7 @@ func TestCanAccessByKey(t *testing.T) {
 		req := testRequest{
 			client:      ts.Client(),
 			method:      http.MethodPost,
-			url:         fmt.Sprintf("%s/channels/%s/access-by-key", ts.URL, tc.chanID),
+			url:         fmt.Sprintf("%s/identify/channels/%s/access-by-key", ts.URL, tc.chanID),
 			contentType: tc.contentType,
 			body:        strings.NewReader(tc.req),
 		}
@@ -289,7 +288,7 @@ func TestCanAccessByID(t *testing.T) {
 		req := testRequest{
 			client:      ts.Client(),
 			method:      http.MethodPost,
-			url:         fmt.Sprintf("%s/channels/%s/access-by-id", ts.URL, tc.chanID),
+			url:         fmt.Sprintf("%s/identify/channels/%s/access-by-id", ts.URL, tc.chanID),
 			contentType: tc.contentType,
 			body:        strings.NewReader(tc.req),
 		}

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 set -euo pipefail
 
 scriptdir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -17,12 +17,12 @@ vault() {
 }
 
 vaultEnablePKI() {
-    vault secrets enable -path pki_${MF_VAULT_CA_NAME} pki
-    vault secrets tune -max-lease-ttl=87600h pki_${MF_VAULT_CA_NAME}
+    vault secrets enable -path ${MF_VAULT_PKI_PATH} pki
+    vault secrets tune -max-lease-ttl=87600h ${MF_VAULT_PKI_PATH}
 }
 
 vaultAddRoleToSecret() {
-    vault write pki_${MF_VAULT_CA_NAME}/roles/${MF_VAULT_CA_NAME} \
+    vault write ${MF_VAULT_PKI_PATH}/roles/${MF_VAULT_CA_NAME} \
         allow_any_name=true \
         max_ttl="4300h" \
         default_ttl="4300h" \
@@ -31,12 +31,12 @@ vaultAddRoleToSecret() {
 
 vaultGenerateRootCACertificate() {
     echo "Generate root CA certificate"
-    vault write -format=json pki_${MF_VAULT_CA_NAME}/root/generate/exported \
-        common_name="\"$MF_VAULT_CA_DOMAIN_NAME CA Root\"" \
+    vault write -format=json ${MF_VAULT_PKI_PATH}/root/generate/exported \
+        common_name="\"$MF_VAULT_CA_CN CA Root\"" \
         ou="\"$MF_VAULT_CA_OU\""\
-        organization="\"$MF_VAULT_CA_ORG\"" \
-        country="\"$MF_VAULT_CA_COUNTRY\"" \
-        locality="\"$MF_VAULT_CA_LOC\"" \
+        organization="\"$MF_VAULT_CA_O\"" \
+        country="\"$MF_VAULT_CA_C\"" \
+        locality="\"$MF_VAULT_CA_L\"" \
         ttl=87600h | tee >(jq -r .data.certificate >data/${MF_VAULT_CA_NAME}_ca.crt) \
                          >(jq -r .data.issuing_ca  >data/${MF_VAULT_CA_NAME}_issuing_ca.crt) \
                          >(jq -r .data.private_key >data/${MF_VAULT_CA_NAME}_ca.key)
@@ -44,15 +44,14 @@ vaultGenerateRootCACertificate() {
 
 vaultGenerateIntermediateCAPKI() {
     echo "Generate Intermediate CA PKI"
-    export NAME_PKI_INT_PATH="pki_int_$MF_VAULT_CA_NAME"
-    vault secrets enable -path=${NAME_PKI_INT_PATH} pki
-    vault secrets tune -max-lease-ttl=43800h ${NAME_PKI_INT_PATH}
+    vault secrets enable -path=${MF_VAULT_PKI_INT_PATH} pki
+    vault secrets tune -max-lease-ttl=43800h ${MF_VAULT_PKI_INT_PATH}
 }
 
 vaultGenerateIntermediateCSR() {
     echo "Generate intermediate CSR"
-    vault write -format=json ${NAME_PKI_INT_PATH}/intermediate/generate/exported \
-        common_name="$MF_VAULT_CA_DOMAIN_NAME Intermediate Authority" \
+    vault write -format=json ${MF_VAULT_PKI_INT_PATH}/intermediate/generate/exported \
+        common_name="$MF_VAULT_CA_CN Intermediate Authority" \
         | tee >(jq -r .data.csr         >data/${MF_VAULT_CA_NAME}_int.csr) \
               >(jq -r .data.private_key >data/${MF_VAULT_CA_NAME}_int.key)
 }
@@ -60,7 +59,7 @@ vaultGenerateIntermediateCSR() {
 vaultSignIntermediateCSR() {
     echo "Sign intermediate CSR"
     docker cp data/${MF_VAULT_CA_NAME}_int.csr mainflux-vault:/vault/${MF_VAULT_CA_NAME}_int.csr
-    vault write -format=json pki_${MF_VAULT_CA_NAME}/root/sign-intermediate \
+    vault write -format=json ${MF_VAULT_PKI_PATH}/root/sign-intermediate \
         csr=@/vault/${MF_VAULT_CA_NAME}_int.csr \
         | tee >(jq -r .data.certificate >data/${MF_VAULT_CA_NAME}_int.crt) \
               >(jq -r .data.issuing_ca >data/${MF_VAULT_CA_NAME}_int_issuing_ca.crt)
@@ -69,7 +68,7 @@ vaultSignIntermediateCSR() {
 vaultInjectIntermediateCertificate() {
     echo "Inject Intermediate Certificate"
     docker cp data/${MF_VAULT_CA_NAME}_int.crt mainflux-vault:/vault/${MF_VAULT_CA_NAME}_int.crt
-    vault write ${NAME_PKI_INT_PATH}/intermediate/set-signed certificate=@/vault/${MF_VAULT_CA_NAME}_int.crt
+    vault write ${MF_VAULT_PKI_INT_PATH}/intermediate/set-signed certificate=@/vault/${MF_VAULT_CA_NAME}_int.crt
 }
 
 vaultGenerateIntermediateCertificateBundle() {
@@ -81,14 +80,14 @@ vaultGenerateIntermediateCertificateBundle() {
 vaultSetupIssuingURLs() {
     echo "Setup URLs for CRL and issuing"
     VAULT_ADDR=http://$MF_VAULT_HOST:$MF_VAULT_PORT
-    vault write ${NAME_PKI_INT_PATH}/config/urls \
-        issuing_certificates="$VAULT_ADDR/v1/${NAME_PKI_INT_PATH}/ca" \
-        crl_distribution_points="$VAULT_ADDR/v1/${NAME_PKI_INT_PATH}/crl"
+    vault write ${MF_VAULT_PKI_INT_PATH}/config/urls \
+        issuing_certificates="$VAULT_ADDR/v1/${MF_VAULT_PKI_INT_PATH}/ca" \
+        crl_distribution_points="$VAULT_ADDR/v1/${MF_VAULT_PKI_INT_PATH}/crl"
 }
 
 vaultSetupCARole() {
     echo "Setup CA role"
-    vault write ${NAME_PKI_INT_PATH}/roles/${MF_VAULT_CA_ROLE_NAME} \
+    vault write ${MF_VAULT_PKI_INT_PATH}/roles/${MF_VAULT_CA_ROLE_NAME} \
         allow_subdomains=true \
         allow_any_name=true \
         max_ttl="720h"
@@ -96,10 +95,10 @@ vaultSetupCARole() {
 
 vaultGenerateServerCertificate() {
     echo "Generate server certificate"
-    vault write -format=json ${NAME_PKI_INT_PATH}/issue/${MF_VAULT_CA_ROLE_NAME} \
-        common_name="$MF_VAULT_CA_DOMAIN_NAME" ttl="8670h" \
-        | tee >(jq -r .data.certificate >data/${MF_VAULT_CA_DOMAIN_NAME}.crt) \
-              >(jq -r .data.private_key >data/${MF_VAULT_CA_DOMAIN_NAME}.key)
+    vault write -format=json ${MF_VAULT_PKI_INT_PATH}/issue/${MF_VAULT_CA_ROLE_NAME} \
+        common_name="$MF_VAULT_CA_CN" ttl="8670h" \
+        | tee >(jq -r .data.certificate >data/${MF_VAULT_CA_CN}.crt) \
+              >(jq -r .data.private_key >data/${MF_VAULT_CA_CN}.key)
 }
 
 vaultCleanupFiles() {
@@ -133,8 +132,8 @@ vaultCleanupFiles
 
 echo "Copying certificate files"
 
-cp -v data/${MF_VAULT_CA_DOMAIN_NAME}.crt     ${MAINFLUX_DIR}/docker/ssl/certs/mainflux-server.crt
-cp -v data/${MF_VAULT_CA_DOMAIN_NAME}.key     ${MAINFLUX_DIR}/docker/ssl/certs/mainflux-server.key
+cp -v data/${MF_VAULT_CA_CN}.crt     ${MAINFLUX_DIR}/docker/ssl/certs/mainflux-server.crt
+cp -v data/${MF_VAULT_CA_CN}.key     ${MAINFLUX_DIR}/docker/ssl/certs/mainflux-server.key
 cp -v data/${MF_VAULT_CA_NAME}_int.key        ${MAINFLUX_DIR}/docker/ssl/certs/ca.key
 cp -v data/${MF_VAULT_CA_NAME}_int.crt        ${MAINFLUX_DIR}/docker/ssl/certs/ca.crt
 cp -v data/${MF_VAULT_CA_NAME}_int_bundle.crt ${MAINFLUX_DIR}/docker/ssl/bundle.pem

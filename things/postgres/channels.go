@@ -170,6 +170,7 @@ func (cr channelRepository) RetrieveAll(ctx context.Context, owner string, pm th
 			Offset: pm.Offset,
 			Limit:  pm.Limit,
 			Order:  pm.Order,
+			Dir:    pm.Dir,
 		},
 	}
 
@@ -377,6 +378,8 @@ func (cr channelRepository) hasThing(ctx context.Context, chanID, thingID string
 type dbMetadata map[string]interface{}
 
 // Scan implements the database/sql scanner interface.
+// When interface is nil `m` is set to nil.
+// If error occurs on casting data then m points to empty metadata.
 func (m *dbMetadata) Scan(value interface{}) error {
 	if value == nil {
 		m = nil

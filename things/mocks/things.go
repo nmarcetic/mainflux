@@ -55,7 +55,7 @@ func (trm *thingRepositoryMock) Save(_ context.Context, ths ...things.Thing) ([]
 		}
 
 		trm.counter++
-		ths[i].ID = strconv.FormatUint(trm.counter, 10)
+		ths[i].ID = fmt.Sprintf("%03d", trm.counter)
 		trm.things[key(ths[i].Owner, ths[i].ID)] = ths[i]
 	}
 
@@ -115,7 +115,7 @@ func (trm *thingRepositoryMock) RetrieveAll(_ context.Context, owner string, pm 
 	trm.mu.Lock()
 	defer trm.mu.Unlock()
 
-	if pm.Limit <= 0 {
+	if pm.Limit < 0 {
 		return things.Page{}, nil
 	}
 
@@ -139,6 +139,45 @@ func (trm *thingRepositoryMock) RetrieveAll(_ context.Context, owner string, pm 
 
 	page := things.Page{
 		Things: ths,
+		PageMetadata: things.PageMetadata{
+			Total:  trm.counter,
+			Offset: pm.Offset,
+			Limit:  pm.Limit,
+		},
+	}
+
+	return page, nil
+}
+
+func (trm *thingRepositoryMock) RetrieveByIDs(_ context.Context, thingIDs []string, pm things.PageMetadata) (things.Page, error) {
+	trm.mu.Lock()
+	defer trm.mu.Unlock()
+
+	items := make([]things.Thing, 0)
+
+	if pm.Limit == 0 {
+		return things.Page{}, nil
+	}
+
+	first := uint64(pm.Offset) + 1
+	last := first + uint64(pm.Limit)
+
+	// This obscure way to examine map keys is enforced by the key structure
+	// itself (see mocks/commons.go).
+	for _, id := range thingIDs {
+		suffix := fmt.Sprintf("-%s", id)
+		for k, v := range trm.things {
+			id, _ := strconv.ParseUint(v.ID, 10, 64)
+			if strings.HasSuffix(k, suffix) && id >= first && id < last {
+				items = append(items, v)
+			}
+		}
+	}
+
+	items = sortThings(pm, items)
+
+	page := things.Page{
+		Things: items,
 		PageMetadata: things.PageMetadata{
 			Total:  trm.counter,
 			Offset: pm.Offset,
