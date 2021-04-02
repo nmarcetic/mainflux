@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"github.com/mainflux/mainflux"
-	"github.com/mainflux/mainflux/auth"
 )
 
 var (
@@ -93,7 +92,6 @@ func (res updateUserRes) Empty() bool {
 type viewUserRes struct {
 	ID       string                 `json:"id"`
 	Email    string                 `json:"email"`
-	Groups   []auth.Group           `json:"groups"`
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -111,7 +109,7 @@ func (res viewUserRes) Empty() bool {
 
 type userPageRes struct {
 	pageRes
-	Users []viewUserRes
+	Users []viewUserRes `json:"users"`
 }
 
 func (res userPageRes) Code() int {
@@ -195,8 +193,23 @@ type errorRes struct {
 	Err string `json:"error"`
 }
 
-type passwChangeRes struct {
+type passwResetReqRes struct {
 	Msg string `json:"msg"`
+}
+
+func (res passwResetReqRes) Code() int {
+	return http.StatusCreated
+}
+
+func (res passwResetReqRes) Headers() map[string]string {
+	return map[string]string{}
+}
+
+func (res passwResetReqRes) Empty() bool {
+	return false
+}
+
+type passwChangeRes struct {
 }
 
 func (res passwChangeRes) Code() int {

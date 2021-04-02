@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/mainflux/mainflux"
+	"github.com/mainflux/mainflux/pkg/errors"
 	"github.com/mainflux/mainflux/pkg/uuid"
 	"github.com/mainflux/mainflux/users"
 	"github.com/mainflux/mainflux/users/api"
@@ -40,8 +41,8 @@ var (
 	unauthRes      = toJSON(errorRes{users.ErrUnauthorizedAccess.Error()})
 	malformedRes   = toJSON(errorRes{users.ErrMalformedEntity.Error()})
 	weakPassword   = toJSON(errorRes{users.ErrPasswordFormat.Error()})
-	unsupportedRes = toJSON(errorRes{api.ErrUnsupportedContentType.Error()})
-	failDecodeRes  = toJSON(errorRes{api.ErrFailedDecode.Error()})
+	unsupportedRes = toJSON(errorRes{errors.ErrUnsupportedContentType.Error()})
+	failDecodeRes  = toJSON(errorRes{errors.ErrMalformedEntity.Error()})
 	passRegex      = regexp.MustCompile("^.{8,}$")
 )
 
@@ -262,9 +263,9 @@ func TestPasswordResetRequest(t *testing.T) {
 	}{
 		{"password reset request with valid email", data, contentType, http.StatusCreated, expectedExisting},
 		{"password reset request with invalid email", nonexistentData, contentType, http.StatusBadRequest, notFoundRes},
-		{"password reset request with invalid request format", "{", contentType, http.StatusBadRequest, failDecodeRes},
+		{"password reset request with invalid request format", "{", contentType, http.StatusBadRequest, malformedRes},
 		{"password reset request with empty JSON request", "{}", contentType, http.StatusBadRequest, malformedRes},
-		{"password reset request with empty request", "", contentType, http.StatusBadRequest, failDecodeRes},
+		{"password reset request with empty request", "", contentType, http.StatusBadRequest, malformedRes},
 		{"password reset request with missing content type", data, "", http.StatusUnsupportedMediaType, unsupportedRes},
 	}
 
@@ -292,20 +293,11 @@ func TestPasswordReset(t *testing.T) {
 	ts := newServer(svc)
 	defer ts.Close()
 	client := ts.Client()
-	resData := struct {
-		Msg string `json:"msg"`
-	}{
-		"",
-	}
 	reqData := struct {
 		Token    string `json:"token,omitempty"`
 		Password string `json:"password,omitempty"`
 		ConfPass string `json:"confirm_password,omitempty"`
 	}{}
-
-	expectedSuccess := toJSON(resData)
-
-	resData.Msg = users.ErrUserNotFound.Error()
 
 	_, err := svc.Register(context.Background(), user)
 	require.Nil(t, err, fmt.Sprintf("register user got unexpected error: %s", err))
@@ -342,12 +334,12 @@ func TestPasswordReset(t *testing.T) {
 		res         string
 		tok         string
 	}{
-		{"password reset with valid token", reqExisting, contentType, http.StatusCreated, expectedSuccess, token},
+		{"password reset with valid token", reqExisting, contentType, http.StatusCreated, "{}", token},
 		{"password reset with invalid token", reqNoExist, contentType, http.StatusForbidden, unauthRes, token},
 		{"password reset with confirm password not matching", reqPassNoMatch, contentType, http.StatusBadRequest, malformedRes, token},
-		{"password reset request with invalid request format", "{", contentType, http.StatusBadRequest, failDecodeRes, token},
+		{"password reset request with invalid request format", "{", contentType, http.StatusBadRequest, malformedRes, token},
 		{"password reset request with empty JSON request", "{}", contentType, http.StatusBadRequest, malformedRes, token},
-		{"password reset request with empty request", "", contentType, http.StatusBadRequest, failDecodeRes, token},
+		{"password reset request with empty request", "", contentType, http.StatusBadRequest, malformedRes, token},
 		{"password reset request with missing content type", reqExisting, "", http.StatusUnsupportedMediaType, unsupportedRes, token},
 		{"password reset with weak password", reqPassWeak, contentType, http.StatusBadRequest, weakPassword, token},
 	}
@@ -381,19 +373,12 @@ func TestPasswordChange(t *testing.T) {
 
 	tkn, _ := auth.Issue(context.Background(), &mainflux.IssueReq{Id: user.ID, Email: user.Email, Type: 0})
 	token := tkn.GetValue()
-	resData := struct {
-		Msg string `json:"msg"`
-	}{
-		"",
-	}
-	expectedSuccess := toJSON(resData)
 
 	reqData := struct {
 		Token    string `json:"token,omitempty"`
 		Password string `json:"password,omitempty"`
 		OldPassw string `json:"old_password,omitempty"`
 	}{}
-	resData.Msg = users.ErrUnauthorizedAccess.Error()
 
 	_, err := svc.Register(context.Background(), user)
 	require.Nil(t, err, fmt.Sprintf("register user got unexpected error: %s", err))
@@ -412,8 +397,6 @@ func TestPasswordChange(t *testing.T) {
 	reqData.Password = invalidPass
 	reqWeakPass := toJSON(reqData)
 
-	resData.Msg = users.ErrUnauthorizedAccess.Error()
-
 	cases := []struct {
 		desc        string
 		req         string
@@ -422,12 +405,12 @@ func TestPasswordChange(t *testing.T) {
 		res         string
 		tok         string
 	}{
-		{"password change with valid token", dataResExisting, contentType, http.StatusCreated, expectedSuccess, token},
+		{"password change with valid token", dataResExisting, contentType, http.StatusCreated, "{}", token},
 		{"password change with invalid token", reqNoExist, contentType, http.StatusForbidden, unauthRes, ""},
 		{"password change with invalid old password", reqWrongPass, contentType, http.StatusForbidden, unauthRes, token},
 		{"password change with invalid new password", reqWeakPass, contentType, http.StatusBadRequest, weakPassword, token},
 		{"password change with empty JSON request", "{}", contentType, http.StatusBadRequest, malformedRes, token},
-		{"password change empty request", "", contentType, http.StatusBadRequest, failDecodeRes, token},
+		{"password change empty request", "", contentType, http.StatusBadRequest, malformedRes, token},
 		{"password change missing content type", dataResExisting, "", http.StatusUnsupportedMediaType, unsupportedRes, token},
 	}
 
