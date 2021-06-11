@@ -17,11 +17,6 @@ import (
 	dockertest "github.com/ory/dockertest/v3"
 )
 
-const (
-	wrongID    = "0"
-	wrongValue = "wrong-value"
-)
-
 var (
 	testLog, _ = logger.New(os.Stdout, logger.Info.String())
 	db         *sqlx.DB
@@ -38,7 +33,7 @@ func TestMain(m *testing.M) {
 		"POSTGRES_PASSWORD=test",
 		"POSTGRES_DB=test",
 	}
-	container, err := pool.Run("postgres", "10.8-alpine", cfg)
+	container, err := pool.Run("postgres", "13.3-alpine", cfg)
 	if err != nil {
 		log.Fatalf("Could not start container: %s", err)
 	}
